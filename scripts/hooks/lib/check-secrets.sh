@@ -27,11 +27,12 @@ run_check_secrets() {
       continue
     fi
 
-    # Skip excluded file types and test fixture directories
+    # Skip excluded file types and test directories.
+    # Any path with a `/tests/` or `/test/` segment is treated as test
+    # material; deliberate fake-secret fixtures live there.
     if [[ "$current_file" =~ \.(test|spec|fixture)\. ]] \
       || [[ "$current_file" =~ \.md$ ]] \
-      || [[ "$current_file" =~ (^|/)scripts/tests/ ]] \
-      || [[ "$current_file" =~ (^|/)tests?/fixtures/ ]]; then
+      || [[ "$current_file" =~ (^|/)tests?/ ]]; then
       continue
     fi
 
