@@ -105,6 +105,7 @@ Allowlist (regexes, anchored — extend via `ALLOWLIST_EXTRA`):
 
 - `^api\.anthropic\.com$`
 - `^statsig\.anthropic\.com$`
+- `^platform\.claude\.com$` (console / OAuth surface used by Claude Code at startup)
 
 DLP (matched against request bodies — extend via `DLP_EXTRA`):
 

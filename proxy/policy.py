@@ -25,6 +25,9 @@ from mitmproxy import http
 DEFAULT_ALLOWLIST = (
     r"^api\.anthropic\.com$",
     r"^statsig\.anthropic\.com$",
+    # Console / OAuth surface used by Claude Code at startup; without it
+    # the agent fails to boot with "Failed to connect to platform.claude.com".
+    r"^platform\.claude\.com$",
 )
 
 DEFAULT_DLP = (
