@@ -36,6 +36,16 @@ RUN userdel --remove node \
  && groupadd --gid 1000 agent \
  && useradd --create-home --uid 1000 --gid 1000 --shell /bin/bash agent
 
+# Claude Code rewrites ~/.claude.json on every session. It sits at the
+# home-dir level (sibling of ~/.claude), so it's not covered by the
+# ~/.claude:ro bind mount or any of the tmpfs overlays under it — and
+# the read-only rootfs would EROFS the first write. Redirect it into
+# the existing ~/.claude/cache tmpfs (see docker-compose.yml). Using a
+# pre-existing tmpfs subpath avoids the need for a host-side mkdir to
+# satisfy Docker's mountpoint-must-exist requirement.
+RUN ln -s /home/agent/.claude/cache/claude.json /home/agent/.claude.json \
+ && chown -h agent:agent /home/agent/.claude.json
+
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
     SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt \
