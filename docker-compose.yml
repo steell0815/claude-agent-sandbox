@@ -63,6 +63,11 @@ services:
       - ./project:/workspace:rw
       - ${HOME}/.claude:/home/agent/.claude:ro
       - logs:/var/log/proxy:ro
+      # Persists ~/.claude.json (symlinked in the image) across runs so
+      # the agent doesn't re-prompt for theme / trusted-directory / etc.
+      # on every container start. Scoped to this stack — wipe with
+      # `docker volume rm claude-agent-sandbox_sandbox-state`.
+      - sandbox-state:/home/agent/sandbox-state
     networks:
       - internal
     user: "1000:1000"
@@ -101,3 +106,4 @@ networks:
 
 volumes:
   logs:
+  sandbox-state:
