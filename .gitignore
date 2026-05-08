@@ -216,3 +216,17 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- claude-blueprint scaffolding ---
+# Local agent playgrounds (analyses, ad-hoc workspaces)
+.agents/playgrounds/
+# Claude Code session-local state (when present)
+.claude/cache/
+.claude/sessions/
+.claude/todos/
+.claude/file-history/
+.claude/projects/
+# Build artefacts from blueprint scripts
+plans/results/.tmp/
+# DAST scan output
+dast-results/

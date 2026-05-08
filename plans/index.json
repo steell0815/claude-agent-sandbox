@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "plans": [
+    {
+      "id": "7842ae75-b346-4e88-b60a-df68672dc320",
+      "title": "Agent Sandbox — Docker MITM-isolated Claude Code runtime",
+      "file": "plans/2026-05-08-agent-sandbox.md",
+      "status": "planned",
+      "createdAt": "2026-05-08T09:00:00Z",
+      "completedAt": null
+    }
+  ]
+}
