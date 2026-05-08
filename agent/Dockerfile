@@ -30,7 +30,11 @@ RUN update-ca-certificates
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
  && npm cache clean --force
 
-RUN useradd --create-home --uid 1000 --shell /bin/bash agent
+# node:22-bookworm-slim ships with a `node` user/group at uid/gid 1000; reuse
+# the slot rather than collide on it.
+RUN userdel --remove node \
+ && groupadd --gid 1000 agent \
+ && useradd --create-home --uid 1000 --gid 1000 --shell /bin/bash agent
 
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \
