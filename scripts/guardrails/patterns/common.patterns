@@ -1,0 +1,27 @@
+# common.patterns --- Language-agnostic guardrail rules
+# Format: RULE|GLOB|REGEX|MODE
+# NOTE: REGEX may contain pipe characters, but they are preserved by the parser.
+# Applied to all stacks (ts-node, java-spring, etc.)
+
+# IF-14: Hardcoded secrets --- password/key/token assignments
+IF-14|**/*.ts|(password|secret|api[_-]?key|token)\s*[:=]\s*["'][^"']{8,}["']|block
+IF-14|**/*.java|(password|secret|api[_-]?key|token)\s*=\s*["'][^"']{8,}["']|block
+IF-14|**/*.py|(password|secret|api[_-]?key|token)\s*=\s*["'][^"']{8,}["']|block
+
+# IF-14: Hardcoded secrets --- AWS access key IDs
+IF-14|**/*.ts|AKIA[0-9A-Z]{16}|block
+IF-14|**/*.java|AKIA[0-9A-Z]{16}|block
+IF-14|**/*.py|AKIA[0-9A-Z]{16}|block
+
+# IF-14: Hardcoded secrets --- GitHub personal access tokens
+IF-14|**/*.ts|ghp_[a-zA-Z0-9]{36}|block
+IF-14|**/*.java|ghp_[a-zA-Z0-9]{36}|block
+IF-14|**/*.py|ghp_[a-zA-Z0-9]{36}|block
+
+# IF-18: Console output in production code (not test files)
+IF-18|src/**/*.ts|console\.(log|warn|error|info|debug)|block
+IF-18|src/**/*.java|System\.(out|err)\.(print|println)|block
+
+# IF-21: TODO/FIXME/HACK markers left in committed code
+IF-21|**/*.ts|(TODO|FIXME|HACK|XXX)\b|block
+IF-21|**/*.java|(TODO|FIXME|HACK|XXX)\b|block

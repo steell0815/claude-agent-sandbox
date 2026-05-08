@@ -1,0 +1,68 @@
+# java-spring.patterns --- Java/Spring guardrail rules
+# Format: RULE|GLOB|REGEX|MODE
+# Applied when stack is java-spring (pom.xml present)
+
+# IF-01: No framework imports in domain center
+IF-01|domain/**/*.java|import\s+(org\.springframework|jakarta\.persistence|javax\.persistence|org\.hibernate)|block
+
+# IF-02: No SQL string concatenation (injection risk)
+IF-02|**/*.java|["']\s*\+.*\b(SELECT|INSERT|UPDATE|DELETE)\b|block
+IF-02|**/*.java|\b(SELECT|INSERT|UPDATE|DELETE)\b.*["']\s*\+|block
+
+# IF-03: No null returns from repository/store files
+IF-03|**/*Repository*.java|return\s+null|block
+IF-03|**/*Store*.java|return\s+null|block
+
+# IF-04: Internal data structures leaked through public API (heuristic)
+IF-04|**/*Controller*.java|return\s+.*entity\b|advisory
+
+# IF-05: Stack trace leakage in error responses
+IF-05|**/*Controller*.java|\.printStackTrace\(\)|advisory
+IF-05|**/*Handler*.java|\.getStackTrace\(\)|advisory
+IF-05|**/*Controller*.java|\.getStackTrace\(\)|advisory
+
+# IF-06: Mutable fields in event/request/response classes (non-final, non-static fields)
+IF-06|**/*Event*.java|(public|protected|private)\s+\w+\s+\w+\s*;|block
+IF-06|**/*Request*.java|(public|protected|private)\s+\w+\s+\w+\s*;|block
+IF-06|**/*Response*.java|(public|protected|private)\s+\w+\s+\w+\s*;|block
+
+# IF-07: Business logic in controller (conditional with domain fields)
+IF-07|**/*Controller*.java|\bif\s*\(.*\.\w+(\.get\w+\(\))?\s*(==|!=|>|<|>=|<=)\s|advisory
+
+# IF-08: Test methods without assertions
+IF-08|**/*Test*.java|@Test\s|block
+IF-08|**/*Test*.java|void\s+test\w+\s*\(\)|block
+
+# IF-09: Skipped/disabled tests
+IF-09|**/*Test*.java|@Disabled|block
+IF-09|**/*Test*.java|@Ignore|block
+
+# IF-10: Hardcoded test data (magic string literals in assertions)
+IF-10|**/*Test*.java|assertEquals\s*\(\s*"[a-zA-Z0-9 ]{10,}"|advisory
+IF-10|**/*Test*.java|assertThat\(.*\)\.isEqualTo\s*\(\s*"[a-zA-Z0-9 ]{10,}"|advisory
+
+# IF-11: Partial field sync (heuristic marker)
+IF-11|**/*.java|\/\/\s*FIELD[-_]?SYNC|advisory
+
+# IF-12: Untested code change (heuristic marker)
+IF-12|**/*.java|\/\/\s*NO[-_]?TEST|advisory
+
+# IF-13: Direct JDBC/SQL driver imports in domain center
+IF-13|domain/**/*.java|import\s+java\.sql|block
+IF-13|domain/**/*.java|import\s+.*\.jdbc\.|block
+
+# IF-15: Controller mapping without /api/ prefix (matches paths starting with /<lowercase>)
+IF-15|**/*Controller*.java|@(Request|Get|Post|Put|Delete|Patch)Mapping\s*\(\s*["']/[b-z]|block
+IF-15|**/*Controller*.java|@(Request|Get|Post|Put|Delete|Patch)Mapping\s*\(\s*["']/(a[^p]|a$)|block
+
+# IF-16: Controller params without @Valid annotation (heuristic)
+IF-16|**/*Controller*.java|@RequestBody\s+\w+|advisory
+
+# IF-17: Public method without test (heuristic)
+IF-17|src/**/*.java|public\s+\w+\s+\w+\s*\(|advisory
+
+# IF-19: Generic catch (catching Exception or Throwable)
+IF-19|**/*.java|catch\s*\(\s*(Exception|Throwable)\s+\w+\s*\)|block
+
+# IF-20: Empty catch block (swallowed errors)
+IF-20|**/*.java|catch\s*\(.*\)\s*\{\s*\}|block
