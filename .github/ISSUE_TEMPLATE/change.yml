@@ -1,0 +1,25 @@
+name: Security-Relevant Change
+description: Document a change that affects security posture
+labels: ["type:change", "status:open"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Change Description
+      description: What is being changed and why?
+    validations:
+      required: true
+  - type: textarea
+    id: risk
+    attributes:
+      label: Risk and Rollback Plan
+      description: What could go wrong? How do we revert?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence Links
+      description: "Links to PRs, test results, or approval records"
+    validations:
+      required: false

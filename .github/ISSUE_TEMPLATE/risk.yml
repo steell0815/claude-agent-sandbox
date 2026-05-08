@@ -1,0 +1,54 @@
+name: Risk Assessment
+description: Document a security or operational risk for tracking and treatment
+labels: ["type:risk", "status:open"]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Risk Scenario
+      description: "Describe the risk as: Threat + Vulnerability -> Impact"
+      placeholder: "An attacker exploits [vulnerability] to [impact]"
+    validations:
+      required: true
+  - type: dropdown
+    id: likelihood
+    attributes:
+      label: Likelihood (1-5)
+      options:
+        - "1 - Rare"
+        - "2 - Unlikely"
+        - "3 - Possible"
+        - "4 - Likely"
+        - "5 - Almost Certain"
+    validations:
+      required: true
+  - type: dropdown
+    id: impact
+    attributes:
+      label: Impact (1-5)
+      options:
+        - "1 - Negligible"
+        - "2 - Minor"
+        - "3 - Moderate"
+        - "4 - Major"
+        - "5 - Severe"
+    validations:
+      required: true
+  - type: dropdown
+    id: treatment
+    attributes:
+      label: Treatment Strategy
+      options:
+        - Reduce (mitigate)
+        - Accept (with justification)
+        - Transfer (insurance, outsource)
+        - Avoid (eliminate activity)
+    validations:
+      required: true
+  - type: textarea
+    id: mitigation
+    attributes:
+      label: Mitigation Actions
+      description: What actions will reduce the risk?
+    validations:
+      required: false

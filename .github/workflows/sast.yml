@@ -1,0 +1,82 @@
+name: SAST Analysis
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep (Application SAST)
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep
+        run: semgrep scan --config auto --error .
+
+  shellcheck:
+    name: ShellCheck (Bash Analysis)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+        with:
+          scandir: .
+          severity: warning
+
+  hadolint:
+    name: Hadolint (Dockerfile Lint)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find Dockerfiles
+        id: find
+        run: |
+          FILES=$(find . -name 'Dockerfile*' -not -path '*/.git/*' | head -20)
+          if [ -z "$FILES" ]; then
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            echo "$FILES"
+          fi
+
+      - name: Run Hadolint
+        if: steps.find.outputs.found == 'true'
+        run: |
+          find . -name 'Dockerfile*' -not -path '*/.git/*' | while read -r f; do
+            echo "::group::Linting $f"
+            docker run --rm -i hadolint/hadolint < "$f"
+            echo "::endgroup::"
+          done
+
+      - name: Skip — no Dockerfiles
+        if: steps.find.outputs.found == 'false'
+        run: echo "No Dockerfiles found — skipping Hadolint"
+
+  trivy:
+    name: Trivy (Dependency & Config Scan)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH
+          exit-code: 1
+          scanners: vuln,misconfig

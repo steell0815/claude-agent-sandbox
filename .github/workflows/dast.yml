@@ -1,0 +1,90 @@
+name: DAST Scan (OWASP ZAP)
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "dast/**"
+      - "docker-compose*.yaml"
+      - "docker-compose*.yml"
+      - ".github/workflows/dast.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  zap-baseline:
+    name: ZAP Baseline Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare environment
+        run: |
+          mkdir -p dast-results
+          ZAP_UID="$(docker run --rm ghcr.io/zaproxy/zaproxy:stable id -u)"
+          ZAP_GID="$(docker run --rm ghcr.io/zaproxy/zaproxy:stable id -g)"
+          sudo chown -R "${ZAP_UID}:${ZAP_GID}" dast-results
+
+      - name: Start application
+        run: docker compose up -d --build
+        env:
+          PORT_BACKEND: 8080
+          PORT_FRONTEND: 3000
+
+      - name: Wait for application to be ready
+        run: |
+          timeout 120 sh -c '
+            until curl -sf http://localhost:3000/ > /dev/null 2>&1; do
+              echo "Waiting for application to be ready..."
+              sleep 5
+            done
+          '
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Run ZAP baseline scan
+        run: |
+          docker run --rm --network host \
+            -v "$(pwd)/dast-results:/zap/wrk:rw" \
+            ghcr.io/zaproxy/zaproxy:stable zap-baseline.py \
+            -t "http://localhost:3000/" \
+            -r zap-report.html \
+            -J zap-report.json \
+            -w zap-report.md \
+            -I
+
+      - name: Upload DAST reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dast-reports
+          path: |
+            dast-results/zap-report.html
+            dast-results/zap-report.json
+            dast-results/zap-report.md
+          retention-days: 90
+
+      - name: Teardown
+        if: always()
+        run: docker compose down -v
+
+      - name: Summary
+        if: always()
+        run: |
+          if [ -f dast-results/zap-report.md ]; then
+            echo "## DAST Scan Results (OWASP ZAP Baseline)" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            cat dast-results/zap-report.md >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "## DAST Scan" >> "$GITHUB_STEP_SUMMARY"
+            echo "No report generated — check workflow logs." >> "$GITHUB_STEP_SUMMARY"
+          fi
