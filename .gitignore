@@ -217,16 +217,11 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
-# --- claude-blueprint scaffolding ---
-# Local agent playgrounds (analyses, ad-hoc workspaces)
-.agents/playgrounds/
-# Claude Code session-local state (when present)
-.claude/cache/
-.claude/sessions/
-.claude/todos/
-.claude/file-history/
-.claude/projects/
-# Build artefacts from blueprint scripts
-plans/results/.tmp/
+# --- agent-sandbox ---
 # DAST scan output
 dast-results/
+# Local mitmproxy CA material — never commit
+ca/
+proxy/.mitmproxy/
+# Generated devcontainer overlay (per-project)
+.devcontainer/.local/
