@@ -18,8 +18,13 @@ Provide one of:
   - Bind-mount your host ~/.claude with a valid .credentials.json
     present (the default compose stack already does this read-only).
 
-If your host stores credentials in the macOS Keychain, export them to
-~/.claude/.credentials.json on the host before starting the sandbox.
+On macOS, Claude Code stores its credential in the Keychain by default,
+not as a file. Run the bundled helper on the host to extract it:
+
+  ./scripts/export-keychain-credentials.sh
+
+…then re-run the agent. The helper is idempotent and safe to re-run
+whenever the host token rotates.
 EOF
   exit 64  # EX_USAGE
 fi

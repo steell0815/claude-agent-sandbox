@@ -40,8 +40,12 @@ Prereqs: Docker 24+, an Anthropic API key (or pre-authorized `~/.claude`),
 
 ```sh
 # 0. Auth — pick one:
+#    a) Headless / API-billed: drop your key into .env
 echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-# (or rely on ~/.claude/.credentials.json, which the stack mounts read-only)
+#    b) macOS host with `claude login` already done: export the credential
+#       from the Keychain to a file the sandbox can mount.
+./scripts/export-keychain-credentials.sh
+#    c) Linux host: ~/.claude/.credentials.json already exists, nothing to do.
 
 # 1. Generate the proxy CA into ./ca/ (one-time, idempotent)
 docker compose run --rm proxy-init
@@ -56,6 +60,13 @@ docker compose run --rm agent  # drops you into Claude Code
 # 4. Tear down
 docker compose down
 ```
+
+> **macOS detail.** Claude Code stores its credential in the Keychain by
+> default, not as a file on disk, so the read-only `~/.claude` bind-mount
+> alone won't carry it into the container. `scripts/export-keychain-credentials.sh`
+> reads `Claude Code-credentials` from the Keychain, validates it parses
+> as JSON, and writes it atomically to `~/.claude/.credentials.json` with
+> `0600` perms. Re-run it whenever the host token rotates.
 
 The agent's working directory is `./project/` (bind-mounted at `/workspace`).
 Drop the source you want the agent to work on there — or replace the bind
