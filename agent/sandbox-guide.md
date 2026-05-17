@@ -2,22 +2,52 @@
 
 You are running inside a hardened sandbox (`claude-agent-sandbox`). The
 agent container is intentionally minimal: it has Node, git, curl,
-python3, jq, and openssh-client. **It does NOT have a JDK, Maven,
-Gradle, or any other JVM toolchain.**
+python3, jq, and openssh-client. **It does NOT natively have a JDK,
+Maven, Gradle, or any other JVM toolchain.**
 
-For toolchain work, there is a sibling **builder** container reachable
-over SSH on the internal compose network. The agent and builder share
-`/workspace` (bind-mounted from the same host directory), so any file
-the agent reads or writes there is immediately visible to the builder
-and vice-versa.
+A sibling **builder** container (Corretto JDK 25 + Maven 3.9 + Node 22
++ pnpm + Chromium) is reachable over SSH on the internal compose
+network. The agent and builder share `/workspace`, so any file you
+read or write there is immediately visible to the builder.
 
-## When to use the builder
+## Toolchain wrappers — you usually don't need `ssh builder` explicitly
 
-Use `ssh builder …` whenever a task needs the JVM, Maven, Gradle, Node
-runtime for build/test (not script execution), Chromium, or any other
-toolchain not in the agent's PATH. Do **not** apt-get / npm install
-toolchains into the agent — they belong in the builder image, and the
-agent rootfs is read-only anyway.
+Common toolchain binaries are *installed in /usr/local/bin as wrappers
+that forward to the builder over SSH automatically*. From your point
+of view they behave like local commands:
+
+```sh
+mvn -v             # runs on the builder, returns Maven 3.9.8
+javac --version    # runs on the builder
+gradle -v          # runs on the builder
+pnpm install       # runs on the builder
+```
+
+Wrapped commands: `mvn`, `gradle`, `java`, `javac`, `jar`, `jshell`,
+`keytool`, `jdeps`, `jstack`, `jmap`, `jcmd`, `jlink`, `pnpm`.
+
+These wrappers preserve `$PWD` (both containers see /workspace at the
+same path), so running `mvn` from `/workspace/module-a` runs `mvn` in
+`/workspace/module-a` on the builder. Build-tuning env vars
+(`MAVEN_OPTS`, `MAVEN_ARGS`, `GRADLE_OPTS`, `JAVA_OPTS`) are forwarded.
+
+## When to use `ssh builder` explicitly
+
+For anything **not** in the wrapper list above — running raw JDK tools
+that aren't symlinked, opening a shell on the builder for debugging,
+launching headless Chromium, etc. — go through SSH explicitly:
+
+```sh
+ssh builder bash -lc 'cd /workspace && ./gradlew --status'
+ssh builder bash -lc 'cd /workspace && chromium --headless --dump-dom https://...'
+```
+
+Wrap commands in `bash -lc '…'` when you need shell features like
+`cd`, glob expansion, or chained `&&` — bare `ssh builder cmd args`
+runs a single binary without a login shell.
+
+Do **not** apt-get / npm install toolchains into the agent — they
+belong in the builder image, and the agent rootfs is read-only anyway.
 
 ## What the builder has
 
@@ -31,73 +61,43 @@ The builder runs as a non-root `builder` user (uid 1001). `/workspace`
 inside the builder is the same directory as `/workspace` inside the
 agent.
 
-## Canonical invocations
+## Canonical invocations (use the wrappers, not raw ssh)
 
 ```sh
-# Java / Maven
-ssh builder mvn -f /workspace/pom.xml -B verify
-ssh builder mvn -f /workspace/pom.xml -B -DskipTests package
+# Java / Maven — wrappers, no `ssh builder` prefix needed
+cd /workspace && mvn -B verify
+cd /workspace && mvn -B -DskipTests package
 
 # Java / Gradle
-ssh builder bash -lc 'cd /workspace && ./gradlew build'
+cd /workspace && gradle build       # or ./gradlew build
 
 # Node / pnpm
-ssh builder bash -lc 'cd /workspace && pnpm install'
-ssh builder bash -lc 'cd /workspace && pnpm test'
+cd /workspace && pnpm install
+cd /workspace && pnpm test
 
 # Quick version probes (use sparingly — once per session is plenty)
-ssh builder java -version
-ssh builder mvn -version
+java -version
+mvn -version
 ```
 
-Wrap commands in `bash -lc '…'` when you need shell features like `cd`,
-glob expansion, or chained `&&` — bare `ssh builder cmd args` runs a
-single binary without a login shell.
+## Git operations
 
-## Git operations with toolchain-dependent hooks
-
-Many real projects configure `core.hooksPath=.githooks` (or similar)
-and run `mvn`, `gradle`, `pnpm test`, etc. from `pre-commit`,
-`pre-push`, or `commit-msg`. Those hooks execute inside whichever
-container runs `git commit` / `git push`. The agent has no JVM, so
-running them here fails with `mvn: command not found`.
-
-**Route hook-triggering git commands through the builder.** /workspace
-is shared, so the working tree, index, and `.git/` are identical on
-both sides.
+Run git normally on the agent: `git status`, `git add`, `git commit`,
+`git push`, etc. all just work. When a project has
+`core.hooksPath=.githooks` with hooks that shell out to `mvn` /
+`gradle` / `pnpm`, those calls hit the wrapper, run on the builder,
+and the hook succeeds — you don't need to do anything special.
 
 ```sh
-# Commits run pre-commit, prepare-commit-msg, commit-msg.
-ssh builder git -C /workspace commit -m "..."
-
-# Pushes run pre-push.
-ssh builder git -C /workspace push
-
-# Merging with hooks involved (rebase + commit, --no-ff, etc.)
-ssh builder bash -lc 'cd /workspace && git merge --no-ff feature'
+git status
+git add .
+git commit -m "..."     # pre-commit hooks calling mvn etc. just work
+git push                # pre-push hooks ditto
 ```
 
-Commands that do **not** trigger toolchain hooks can stay on the
-agent — they're faster and don't need the round-trip:
-
-```sh
-git status                       # agent — no hooks
-git diff                         # agent
-git add ...                      # agent
-git log --oneline -20            # agent
-git -C /workspace config user.email "..."   # agent (per-repo config)
-```
-
-If a commit fails on the builder, fix the underlying issue (broken
-test, formatting, …) and try again. Do **not** reach for `--no-verify`
-unless the user explicitly asks — the whole reason the hook exists is
-to gate bad commits, and bypassing it in a sandbox makes the sandbox
-less safe than committing on the host would be.
-
-Identity: the per-repo `.git/config` lives in /workspace and is read
-by both containers, so once you've set `user.name` / `user.email` for
-the repo (the agent typically does this on first commit), the builder
-picks it up automatically — no separate setup needed.
+Do **not** reach for `--no-verify` unless the user explicitly asks.
+The whole reason the hook exists is to gate bad commits; bypassing it
+makes the sandbox less safe than committing on the host would be.
 
 ## Testcontainers / Docker-from-builder
 

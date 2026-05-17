@@ -28,6 +28,10 @@ AllowAgentForwarding no
 GatewayPorts no
 PrintMotd no
 
+# Mirror agent ~/.ssh/config's SendEnv — only build-tuning vars cross
+# the boundary, nothing path- or auth-related.
+AcceptEnv MAVEN_OPTS MAVEN_ARGS GRADLE_OPTS JAVA_OPTS
+
 # Surface logs on stderr so `docker logs` shows auth events.
 LogLevel INFO
 SyslogFacility AUTH

@@ -12,3 +12,7 @@ Host builder
   UserKnownHostsFile /tmp/known_hosts.builder
   ServerAliveInterval 30
   ServerAliveCountMax 3
+  # Forward build-tuning env vars so `MAVEN_OPTS=-Xmx2g mvn ...` etc.
+  # behave the same whether the user thinks they're running locally or
+  # remotely. Builder's sshd_config has matching AcceptEnv.
+  SendEnv MAVEN_OPTS MAVEN_ARGS GRADLE_OPTS JAVA_OPTS

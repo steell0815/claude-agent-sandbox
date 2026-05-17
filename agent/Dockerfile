@@ -74,6 +74,18 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # so the agent always knows how to reach the builder service.
 COPY agent/sandbox-guide.md /etc/claude-code/sandbox-guide.md
 
+# Toolchain wrappers: each tool below is a symlink to delegate-to-builder,
+# which forwards the invocation over SSH to the builder service. The real
+# binaries don't exist in the agent image; these wrappers stand in for
+# them so callers — the LLM, git hooks, build scripts — transparently
+# execute on the builder. This is the *enforcement* layer for "use the
+# builder for toolchain work"; the sandbox-guide.md text is advisory only.
+COPY agent/delegate-to-builder /usr/local/bin/delegate-to-builder
+RUN chmod +x /usr/local/bin/delegate-to-builder \
+ && for t in mvn gradle java javac jar jshell keytool jdeps jstack jmap jcmd jlink pnpm; do \
+      ln -s /usr/local/bin/delegate-to-builder "/usr/local/bin/$t"; \
+    done
+
 USER agent
 WORKDIR /workspace
 

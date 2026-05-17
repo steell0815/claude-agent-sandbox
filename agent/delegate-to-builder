@@ -1,0 +1,31 @@
+#!/bin/bash
+# delegate-to-builder — transparent wrapper that forwards a same-named
+# toolchain invocation to the `builder` SSH host.
+#
+# Installed as symlinks under /usr/local/bin (mvn, gradle, java, javac,
+# jar, jshell, keytool, jdeps, jstack, jmap, jcmd, jlink, pnpm). The
+# binaries themselves don't exist in the agent image — these wrappers
+# stand in for them so any caller (the LLM via the Bash tool, a git
+# pre-commit hook, a Makefile, anything) transparently runs the real
+# binary on the builder where the JDK and Node toolchain live.
+#
+# Working directory is preserved by `cd $PWD` on the remote side — both
+# containers see /workspace at the same path, so a build invoked from
+# /workspace/module-a runs in /workspace/module-a on the builder.
+#
+# Build-tuning env vars (MAVEN_OPTS, MAVEN_ARGS, GRADLE_OPTS, JAVA_OPTS)
+# are carried across via SendEnv / AcceptEnv configured in the SSH client
+# and server respectively.
+
+set -euo pipefail
+
+TOOL=$(basename "$0")
+
+# printf %q produces shell-safe quoting that survives the remote bash -c
+# parse. Build the remote command piece-by-piece to keep argv intact.
+REMOTE_CMD=$(printf 'cd %q && exec %q' "$PWD" "$TOOL")
+for arg in "$@"; do
+  REMOTE_CMD="$REMOTE_CMD $(printf '%q' "$arg")"
+done
+
+exec ssh builder bash -c "$REMOTE_CMD"
