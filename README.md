@@ -316,9 +316,25 @@ secrets, services, nodes, system, plugins, configs, auth.
   not on the random ports the host daemon publishes for spawned
   test containers. The override redirects connection URLs to
   `host.docker.internal`, which the builder resolves via an
-  `extra_hosts: [host.docker.internal:host-gateway]` entry that
-  Docker fills in with the host's gateway IP (works through an
-  `internal: true` network on Docker Desktop).
+  `extra_hosts: [host.docker.internal:host-gateway]` entry.
+- **The builder gets a second network (`host-bridge`)** so the
+  resolved `host.docker.internal` is *routable*. `internal: true`
+  alone strips the default route, so even with name resolution the
+  JVM got `java.net.SocketException: Network is unreachable`. The
+  `host-bridge` is a regular Docker bridge with masquerading enabled,
+  which means **the builder now has direct internet egress for raw
+  TCP/UDP via this network**. HTTP/HTTPS still funnels through
+  mitmproxy via `HTTP_PROXY`/`HTTPS_PROXY`. Tools that respect those
+  env vars (Maven, Gradle, npm, curl, git via http(s)) are unchanged;
+  the new surface is non-HTTP egress. The agent stays internal-only;
+  this regression is builder-scoped.
+- **JVMs on the builder force IPv4-only** via
+  `JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true`. Docker Desktop's
+  `host.docker.internal:host-gateway` adds both an IPv4 (192.168.65.254)
+  and IPv6 entry to /etc/hosts; the IPv6 address isn't routable from
+  the host-bridge, and the default Java connect logic tries IPv6 first
+  and fails with `Network is unreachable` before reaching the IPv4
+  retry. Forcing IPv4 sidesteps the dual-stack hazard entirely.
 - If you want a tighter wedge on bind-mount filtering more generally
   (allow socket binds, deny path binds), `wollomatic/socket-proxy`
   does per-field regex filtering. Drop-in upgrade from tecnativa.

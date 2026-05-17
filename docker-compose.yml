@@ -136,6 +136,13 @@ services:
       - builder-gradle-cache:/home/builder/.gradle/caches
     networks:
       - internal
+      # `host-bridge`: lets the builder reach `host.docker.internal`,
+      # i.e. Testcontainers-spawned containers' host-published ports.
+      # Without this, `internal: true` strips the default route and
+      # the JVM gets `java.net.SocketException: Network is unreachable`
+      # when connecting to a spawned postgres/kafka/etc. Egress
+      # tradeoff documented on the `host-bridge` network definition.
+      - host-bridge
     user: "1001:1001"
     working_dir: /workspace
     cap_drop: [ALL]
@@ -176,6 +183,18 @@ services:
       # crash before --rm fires; `docker compose down` between sessions
       # sweeps anything stranded.
       TESTCONTAINERS_RYUK_DISABLED: "true"
+      # Force every JVM on the builder (Maven, Surefire forks, Gradle
+      # daemons, Testcontainers' own clients) to use IPv4-only.
+      # Reason: Docker Desktop's `host.docker.internal:host-gateway`
+      # adds BOTH an IPv4 and IPv6 entry to /etc/hosts. The host-bridge
+      # network has IPv4 routing only; the IPv6 host-gateway address
+      # has no route. Java tries the IPv6 address first by default and
+      # fails with `java.net.SocketException: Network is unreachable`
+      # before it gets a chance to retry on IPv4. preferIPv4Stack=true
+      # makes the JVM ignore IPv6 entirely. JAVA_TOOL_OPTIONS (vs
+      # JAVA_OPTS) is honoured by every Java tool unconditionally, so
+      # forked Surefire JVMs pick it up too.
+      JAVA_TOOL_OPTIONS: "-Djava.net.preferIPv4Stack=true"
     mem_limit: ${BUILDER_MEM_LIMIT:-6g}
     cpus: ${BUILDER_CPUS:-4}
     restart: unless-stopped
@@ -245,6 +264,17 @@ networks:
   internal:
     internal: true
   egress:
+    driver: bridge
+  # `host-bridge`: a regular bridge that gives the builder a path to
+  # the host (and therefore to Testcontainers-spawned containers'
+  # host-published ports). On Docker Desktop, `host.docker.internal`
+  # resolves to a VM-external IP that requires NAT/masquerading to
+  # reach, so we can't disable masquerade here — which means the
+  # builder *can* now egress raw TCP/UDP to the internet directly via
+  # this bridge. HTTP/HTTPS still funnels through mitmproxy via the
+  # builder's HTTP_PROXY/HTTPS_PROXY env. The agent stays on
+  # internal-only and unaffected; only the builder gets this surface.
+  host-bridge:
     driver: bridge
 
 volumes:

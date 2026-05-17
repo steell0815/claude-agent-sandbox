@@ -137,10 +137,16 @@ secrets, services, nodes, system, plugins, configs, auth.
    publish their ports on the *host*, not on `docker-proxy`. The
    builder env sets `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`
    so `getJdbcUrl()` and friends return URLs like
-   `jdbc:postgresql://host.docker.internal:32145/...`. The builder
-   has `host.docker.internal:host-gateway` in its `extra_hosts` so
-   that name resolves through an `internal: true` network — Docker
-   Desktop wires the host-gateway IP automatically.
+   `jdbc:postgresql://host.docker.internal:32145/...`. The builder is
+   attached to a second `host-bridge` network so that name actually
+   routes; `internal: true` alone doesn't reach the host.
+4. **JVMs are pinned to IPv4** via `JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true`.
+   Docker Desktop's `host.docker.internal:host-gateway` adds both an
+   IPv4 and IPv6 entry to /etc/hosts. The IPv6 host-gateway address
+   has no route from our bridge, so Java would otherwise try IPv6
+   first and fail with `java.net.SocketException: Network is
+   unreachable` before retrying on IPv4. Don't override this in
+   per-test JVM args.
 3. **The proxy does not filter request bodies.** So technically a
    container-create call could include `HostConfig.Binds: ["/:/host"]`
    and the host daemon would honor it. Don't construct such calls
