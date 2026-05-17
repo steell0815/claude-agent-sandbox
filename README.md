@@ -14,29 +14,32 @@ is intentionally **not** maintained in this repo.
 
 ## Architecture at a glance
 
-| Service      | Role                                                                        |
-| ------------ | --------------------------------------------------------------------------- |
-| `proxy-init` | One-shot. Generates the mitmproxy CA into `./ca/` on first run. Idempotent. |
-| `proxy`      | `mitmdump` with `proxy/policy.py`. Sole bridge between agent and internet.  |
-| `agent`      | Claude Code on a network-internal-only bridge; no direct egress.            |
+| Service        | Role                                                                                                              |
+| -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `proxy-init`   | One-shot. Generates the mitmproxy CA into `./ca/` on first run. Idempotent.                                       |
+| `proxy`        | `mitmdump` with `proxy/policy.py`. Sole bridge between agent and internet.                                        |
+| `keys-init`    | One-shot. Generates the ed25519 keypair the agent uses to SSH into the builder.                                   |
+| `builder`      | Long-running JDK 25 + Maven + Node + Chromium sshd. Sibling of the agent, reachable over the internal network.    |
+| `docker-proxy` | `tecnativa/docker-socket-proxy` in front of the host Docker daemon. Lets Testcontainers spawn containers, filtered. |
+| `agent`        | Claude Code on the internal-only network; no direct egress. Toolchain calls transparently SSH to the builder.     |
 
 Networks:
 
-- `internal` — `internal: true`. Agent ↔ proxy only. No external egress.
+- `internal` — `internal: true`. Agent ↔ proxy / builder / docker-proxy. No external egress.
 - `egress` — bridge. Proxy only.
 
 Hardening rings:
 
-1. **Harness** — `settings.json` allow/deny + `validate-bash` hook (mounted profile), plus a PreToolUse `Bash` hook that blocks raw `docker` CLI invocations (`agent/sandbox-hooks/block-docker-cli.sh`).
-2. **Container** — `cap_drop: ALL`, no-new-privileges, read-only rootfs, non-root user, tmpfs scratch.
-3. **Network** — proxy allowlist + outbound DLP.
+1. **Harness** — host-side `settings.json` allow/deny + `validate-bash` hook (mounted profile from `~/.claude`), plus sandbox-side PreToolUse hooks under `agent/sandbox-hooks/` (block raw `docker` CLI and `apt`/`dpkg` state-changing commands) and toolchain wrappers under `/usr/local/bin` that forcibly route `mvn`/`gradle`/`java`/… to the builder.
+2. **Container** — `cap_drop: ALL`, no-new-privileges, read-only rootfs on the agent, non-root users (agent uid 1000, builder uid 1001), tmpfs scratch.
+3. **Network** — proxy allowlist + outbound DLP on all agent egress; builder egress likewise.
 
 Each ring is bypassable on its own; together they're meaningful.
 
 ## Quickstart
 
 Prereqs: Docker 24+, an Anthropic API key (or pre-authorized `~/.claude`),
-~500 MB free disk for the agent image.
+~3 GB free disk (agent ~700 MB, builder ~1.6 GB, proxies ~0.3 GB).
 
 ```sh
 # 0. Auth — pick one:
@@ -50,17 +53,19 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
 # 1. Generate the proxy CA into ./ca/ (one-time, idempotent)
 docker compose run --rm proxy-init
 
-# 2. Build the agent image (now that the CA cert exists for the COPY)
-docker compose build agent
+# 2. Build all images (CA cert now exists for the agent/builder COPY)
+docker compose build agent builder keys-init
 
-# 3. Start the proxy in the background and run the agent interactively.
-#    The wrapper refreshes ~/.claude/.credentials.json from the macOS
-#    Keychain on each run (no-op on Linux), then `docker compose run`s
-#    the agent. Args after the script are forwarded to `claude`.
-docker compose up -d proxy
-./scripts/run-agent.sh  # drops you into Claude Code
+# 3. Run the agent. The wrapper:
+#      - refreshes ~/.claude/.credentials.json from the macOS Keychain
+#        (no-op on Linux),
+#      - resolves $PWD (or $AGENT_WORKDIR) into the workspace mount,
+#      - brings up proxy / keys-init / builder / docker-proxy as needed,
+#      - drops you into Claude Code.
+#    Extra args are forwarded to `claude`.
+./scripts/run-agent.sh
 
-# 4. Tear down
+# 4. Tear down (stops the long-running services; volumes preserved)
 docker compose down
 ```
 
@@ -123,6 +128,36 @@ Notes:
   files you create from inside the sandbox will be owned by uid 1000 on
   the host.
 
+## Harness enforcement
+
+Three layers sit between the LLM and host-level mistakes; only the
+first is advisory.
+
+1. **System-prompt guide** (`agent/sandbox-guide.md`). Injected into
+   every session via `claude --append-system-prompt`. Tells the
+   model where the builder lives, when to use it, and what not to
+   do. The LLM can in principle ignore this, so we don't rely on it
+   for security — only for ergonomics ("here's the canonical path").
+2. **Filesystem wrappers** (`agent/delegate-to-builder` symlinked as
+   `/usr/local/bin/{mvn,gradle,java,javac,…,pnpm}`). Real JDK / Maven
+   / Gradle binaries don't exist in the agent image, and the rootfs
+   is read-only so they can't be installed at runtime. When the LLM
+   types `mvn`, it gets the wrapper, which SSHs to the builder. There
+   is no path that bypasses this short of writing to a read-only FS.
+3. **PreToolUse hooks** (`agent/sandbox-hooks/*.sh` + `agent/sandbox-settings.json`).
+   Run by Claude Code *before* the Bash tool executes the command.
+   Exit code 2 blocks the call and the rejection message goes back
+   to the model as the tool result. Currently shipped:
+   - `block-docker-cli.sh` — denies `docker run`/`exec`/`pull`/etc.
+   - `block-apt-install.sh` — denies `apt`/`apt-get`/`dpkg` state changes
+     (read-only introspection like `apt list`, `dpkg -l` stays allowed).
+
+To add another hook: drop a new script under `agent/sandbox-hooks/`,
+list it in `agent/sandbox-settings.json` under the appropriate
+matcher, rebuild the agent image. The hook receives the standard
+Claude Code hook JSON event on stdin and exits 0 (allow) or 2
+(block + stderr message shown to the model).
+
 ## Builder (Java / Node toolchain)
 
 The agent image is intentionally minimal — Node + git + curl + python3 +
@@ -142,13 +177,35 @@ the host Docker socket.
          +-- /workspace (rw) --+    same host dir bind-mounted into both
 ```
 
-How to use it from inside the sandbox:
+How to use it from inside the sandbox: **toolchain commands work
+without an `ssh builder` prefix**. The agent's `/usr/local/bin` ships
+wrapper scripts for `mvn`, `gradle`, `java`, `javac`, `jar`, `jshell`,
+`keytool`, `jdeps`, `jstack`, `jmap`, `jcmd`, `jlink`, and `pnpm` —
+each is a symlink to `agent/delegate-to-builder`, which forwards over
+SSH and preserves the current working directory (`/workspace` is the
+same path in both containers).
 
 ```sh
-ssh builder mvn -f /workspace/pom.xml -B verify
-ssh builder ./gradlew -p /workspace build
-ssh builder pnpm --dir /workspace install
+# From inside the agent (or from a git hook running inside the agent):
+cd /workspace && mvn -B verify         # runs on the builder
+cd /workspace && gradle build          # runs on the builder
+cd /workspace && pnpm install          # runs on the builder
+java -version                          # runs on the builder
 ```
+
+For non-wrapped tools — opening a shell on the builder for debugging,
+running headless Chromium, invoking less-common JDK binaries — use
+`ssh builder` directly:
+
+```sh
+ssh builder bash -lc 'cd /workspace && ./gradlew --status'
+ssh builder bash -lc 'chromium --headless --dump-dom https://example.com'
+```
+
+The `cas` wrapper runs `docker compose up -d builder` before
+launching the agent, so the builder is always reconciled with the
+current `$AGENT_WORKDIR`. Switching `cas` between projects can't
+leave the builder pinned to a stale workspace.
 
 Artifact hosts (Maven Central, Gradle, npm, Sonatype OSS, JitPack) are in
 the proxy's default allowlist — no extra config needed for those. For
@@ -240,6 +297,7 @@ Copy `.env.example` → `.env` and uncomment knobs as needed. Common ones:
 | `BUILDER_MEM_LIMIT`    | `6g`               | Builder container memory cap (JVM + Gradle daemons).     |
 | `BUILDER_CPUS`         | `4`                | Builder container CPU cap.                               |
 | `AGENT_WORKDIR`        | `./project`        | Host path bind-mounted at `/workspace` in agent+builder. |
+| `CAS_HOME`             | (auto-resolved)    | Override for `run-agent.sh`'s repo lookup. Set when the wrapper is copied (not symlinked) onto `$PATH`. See "Install once, run from anywhere" above. |
 
 To pass a project-specific allowlist, mount it onto the proxy and point the
 env var at it. Example overlay (`docker-compose.override.yml`):
@@ -257,9 +315,22 @@ services:
 
 Allowlist (regexes, anchored — extend via `ALLOWLIST_EXTRA`):
 
+Claude Code control plane:
+
 - `^api\.anthropic\.com$`
 - `^statsig\.anthropic\.com$`
 - `^platform\.claude\.com$` (console / OAuth surface used by Claude Code at startup)
+
+Build-toolchain artifact hosts (used by the builder):
+
+- `^repo\.maven\.apache\.org$`, `^repo1\.maven\.org$` — Maven Central
+- `^services\.gradle\.org$`, `^downloads\.gradle\.org$`, `^plugins\.gradle\.org$`, `^plugins-artifacts\.gradle\.org$` — Gradle distributions + plugin portal
+- `^registry\.npmjs\.org$` — npm / pnpm registry
+- `^oss\.sonatype\.org$`, `^s01\.oss\.sonatype\.org$` — Sonatype OSS
+- `^jitpack\.io$` — JitPack
+
+For internal repos (Nexus, Artifactory, internal mirrors), add them
+via `ALLOWLIST_EXTRA` — see the **Builder** section above.
 
 DLP (matched against request bodies — extend via `DLP_EXTRA`):
 
@@ -286,15 +357,25 @@ Each line is a single JSON object: `{ts, host, method, path, allowed, reason, si
 
 ```sh
 # Pre-commit gate (bash syntax + secret detection) runs automatically.
-bash -n proxy/bootstrap-ca.sh agent/entrypoint.sh
+# Cover both repo scripts and image-baked-in ones.
+bash -n proxy/bootstrap-ca.sh agent/entrypoint.sh builder/entrypoint.sh \
+        agent/delegate-to-builder agent/sandbox-hooks/*.sh \
+        keys-init/init.sh scripts/run-agent.sh scripts/export-keychain-credentials.sh
 python3 -m py_compile proxy/policy.py
 
-# Policy unit tests (requires mitmproxy + pytest)
-pip install "mitmproxy~=11.0" pytest
-pytest proxy/tests/ -v
+# Policy unit tests (require mitmproxy + pytest). Easiest inside the
+# proxy image, which already has mitmproxy installed:
+docker run --rm -v "$PWD/proxy:/work" -w /work --entrypoint sh \
+  claude-agent-sandbox-proxy -c \
+  'pip install pytest --quiet --user && python -m pytest tests/test_policy.py -q'
 
 # Compose validation
 docker compose config -q
+
+# Hadolint on the four Dockerfiles
+for f in agent/Dockerfile builder/Dockerfile keys-init/Dockerfile proxy/Dockerfile; do
+  docker run --rm -i hadolint/hadolint < "$f"
+done
 ```
 
 CI runs the same checks plus `sast.yml` (Semgrep, ShellCheck, Hadolint, Trivy)
@@ -304,27 +385,47 @@ and `git-integrity.yml` (`git fsck`).
 
 - **Cert pinning** — Go binaries with embedded roots, `gcloud`, mobile SDKs
   fail under MITM. `npm`, `pip`, `cargo`, `git`, `curl`, `gh`, the Anthropic
-  SDK, and Claude Code all honor the system trust store and work.
+  SDK, Claude Code, and Maven/Gradle (the JVM `cacerts` truststore has the
+  mitm CA imported at builder image build time) all honor the trust store
+  and work.
 - **SSE granularity** — Anthropic's API uses SSE; the request hook fires at
   request time, the response hook fires when the stream closes. Per-chunk
-  audit needs `responseheaders` + `response_chunk` hooks (not in Phase 1).
+  audit needs `responseheaders` + `response_chunk` hooks (not implemented).
 - **CA private key** — anyone with `./ca/mitmproxy-ca.pem` (cert + key) can
   forge any cert the agent trusts. Generated per-deployment, never committed,
   never mounted to the agent.
-- **Memory persistence** — `~/.claude/projects/<x>/memory/` lands on tmpfs in
-  Phase 1 and is lost on container restart. To persist, add a named volume
-  for that subpath in a compose override.
-- **Read-only mount blocks token refresh** — Claude Code rotates its OAuth
-  access token periodically and tries to write the new value back to
-  `.credentials.json`. The read-only mount makes that a no-op; in practice
-  the in-memory token survives the session, but multi-day containers may
-  need a restart to pick up a freshly-refreshed host token.
+- **Memory persistence** — `~/.claude/projects/<x>/memory/` lands on tmpfs
+  and is lost on container restart. `~/.claude.json` is persisted via the
+  `sandbox-state` named volume (so theme / trusted-directory / project
+  history survive), but per-project memory needs a separate compose-override
+  named volume.
+- **Token refresh on a read-only mount** — Claude Code rotates its OAuth
+  access token and tries to write the new value back to `.credentials.json`,
+  but `~/.claude` is mounted read-only. `scripts/run-agent.sh` mitigates
+  this by re-exporting from the macOS Keychain on every `cas` invocation,
+  so each session starts with a fresh credential. In-session refresh is
+  still a no-op; long-running interactive sessions may need re-invocation.
+- **Testcontainers image pulls bypass the egress allowlist.** Images pulled
+  by the host daemon on Testcontainers' behalf don't traverse the mitmproxy.
+  Pin to trusted registries; see the **Testcontainers** section above.
+- **Builder cache volume ownership** — `builder-m2` / `builder-gradle-cache`
+  volumes created before commit `779586a` are owned by `root:root`. With
+  `cap_drop: ALL`, even uid 0 in the builder can't write into them. Symptom:
+  `mvn` failing with `Permission denied` against `~/.m2/repository`. Fix:
+  ```sh
+  docker run --rm \
+    -v claude-agent-sandbox_builder-m2:/m2 \
+    -v claude-agent-sandbox_builder-gradle-cache:/gradle \
+    alpine chown -R 1001:1001 /m2 /gradle
+  ```
+  Or wipe and let them be reborn:
+  `docker volume rm claude-agent-sandbox_builder-m2 claude-agent-sandbox_builder-gradle-cache`.
 
 ## Layout
 
 ```
 .
-├── docker-compose.yml          # 3-service stack (proxy-init, proxy, agent)
+├── docker-compose.yml          # 6 services: proxy-init, proxy, keys-init, builder, docker-proxy, agent
 ├── .env.example                # config knobs
 ├── proxy/
 │   ├── Dockerfile              # mitmproxy + policy.py
@@ -332,11 +433,30 @@ and `git-integrity.yml` (`git fsck`).
 │   ├── bootstrap-ca.sh         # CA generator (proxy-init)
 │   └── tests/                  # pytest unit tests for policy
 ├── agent/
-│   ├── Dockerfile              # multi-stage (agent-base, agent)
-│   └── entrypoint.sh
-├── project/                    # bind-mounted to /workspace (default target)
+│   ├── Dockerfile              # agent image
+│   ├── entrypoint.sh           # cred validation, --append-system-prompt, --settings
+│   ├── ssh-config              # baked-in ~/.ssh/config for `Host builder`
+│   ├── delegate-to-builder     # toolchain wrapper (mvn/gradle/java/... symlink to this)
+│   ├── sandbox-guide.md        # injected into the system prompt every session
+│   ├── sandbox-settings.json   # claude --settings; wires up PreToolUse hooks
+│   └── sandbox-hooks/          # PreToolUse hook scripts (block-docker-cli, block-apt-install)
+├── builder/
+│   ├── Dockerfile              # JDK 25 + Maven + Node + Chromium + sshd
+│   ├── entrypoint.sh           # host-key gen, install authorized_keys, exec sshd
+│   ├── sshd_config             # pubkey-only, port 2222, AcceptEnv MAVEN_OPTS/...
+│   ├── maven-settings.xml      # routes Maven resolution through the mitmproxy
+│   ├── gradle.properties       # same for Gradle
+│   └── allowlist.txt           # reference list of artifact-host regexes
+├── keys-init/
+│   ├── Dockerfile              # alpine + ssh-keygen
+│   └── init.sh                 # idempotent ed25519 keypair generator
+├── scripts/
+│   ├── run-agent.sh            # the `cas` wrapper
+│   ├── export-keychain-credentials.sh
+│   └── hooks/                  # this repo's own pre-commit / commit-msg gates
+├── ca/                         # generated by proxy-init; mitmproxy CA lives here
+├── project/                    # default bind-mount target for /workspace
 ├── plans/                      # design plan(s)
-├── scripts/hooks/              # pre-commit + commit-msg gates
 └── .github/workflows/          # ci.yml (compose+pytest), sast/dast/git-integrity
 ```
 
