@@ -1,0 +1,16 @@
+{
+  "//": "Sandbox-side Claude Code settings, loaded via --settings in entrypoint.sh. Hosts the harness-level enforcement that lives outside the LLM (PreToolUse hooks etc.). Keep this file minimal — anything project-specific belongs in /workspace/.claude/settings.json.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/block-docker-cli.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

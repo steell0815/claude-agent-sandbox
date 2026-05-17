@@ -43,4 +43,13 @@ if [[ -r "$GUIDE" ]] && ! printf '%s\0' "$@" | grep -qz -- '--append-system-prom
   APPEND_ARGS=(--append-system-prompt "$(cat "$GUIDE")")
 fi
 
-exec claude "${APPEND_ARGS[@]}" "$@"
+# Load sandbox settings (PreToolUse hooks etc.). Same "caller wins"
+# convention as the system prompt: if the user passed --settings
+# themselves, defer to that.
+SETTINGS=/etc/claude-code/sandbox-settings.json
+SETTINGS_ARGS=()
+if [[ -r "$SETTINGS" ]] && ! printf '%s\0' "$@" | grep -qz -- '--settings'; then
+  SETTINGS_ARGS=(--settings "$SETTINGS")
+fi
+
+exec claude "${APPEND_ARGS[@]}" "${SETTINGS_ARGS[@]}" "$@"

@@ -74,6 +74,13 @@ RUN chmod +x /usr/local/bin/entrypoint.sh
 # so the agent always knows how to reach the builder service.
 COPY agent/sandbox-guide.md /etc/claude-code/sandbox-guide.md
 
+# Harness-level enforcement: PreToolUse hooks invoked by claude itself.
+# Loaded via --settings in entrypoint.sh. These run outside the LLM so
+# they can't be argued away.
+COPY agent/sandbox-settings.json /etc/claude-code/sandbox-settings.json
+COPY agent/sandbox-hooks/ /etc/claude-code/hooks/
+RUN chmod +x /etc/claude-code/hooks/*.sh
+
 # Toolchain wrappers: each tool below is a symlink to delegate-to-builder,
 # which forwards the invocation over SSH to the builder service. The real
 # binaries don't exist in the agent image; these wrappers stand in for

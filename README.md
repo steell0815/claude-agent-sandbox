@@ -27,7 +27,7 @@ Networks:
 
 Hardening rings:
 
-1. **Harness** — `settings.json` allow/deny + `validate-bash` hook (mounted profile).
+1. **Harness** — `settings.json` allow/deny + `validate-bash` hook (mounted profile), plus a PreToolUse `Bash` hook that blocks raw `docker` CLI invocations (`agent/sandbox-hooks/block-docker-cli.sh`).
 2. **Container** — `cap_drop: ALL`, no-new-privileges, read-only rootfs, non-root user, tmpfs scratch.
 3. **Network** — proxy allowlist + outbound DLP.
 
