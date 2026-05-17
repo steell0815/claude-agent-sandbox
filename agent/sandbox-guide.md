@@ -133,6 +133,14 @@ secrets, services, nodes, system, plugins, configs, auth.
    containers with `--rm`. Don't try to re-enable Ryuk; if you see
    `Could not find a valid Docker environment` or similar from
    Testcontainers, the fix is somewhere else, not Ryuk.
+3. **Connection URLs use `host.docker.internal`.** Spawned containers
+   publish their ports on the *host*, not on `docker-proxy`. The
+   builder env sets `TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal`
+   so `getJdbcUrl()` and friends return URLs like
+   `jdbc:postgresql://host.docker.internal:32145/...`. The builder
+   has `host.docker.internal:host-gateway` in its `extra_hosts` so
+   that name resolves through an `internal: true` network — Docker
+   Desktop wires the host-gateway IP automatically.
 3. **The proxy does not filter request bodies.** So technically a
    container-create call could include `HostConfig.Binds: ["/:/host"]`
    and the host daemon would honor it. Don't construct such calls

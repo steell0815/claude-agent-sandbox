@@ -141,15 +141,28 @@ services:
     cap_drop: [ALL]
     security_opt:
       - no-new-privileges:true
+    # `host.docker.internal` is auto-resolved on Docker Desktop only for
+    # containers on the default bridge. User-defined networks (and
+    # especially `internal: true` ones) need an explicit hosts entry.
+    # The `host-gateway` magic value is resolved by Docker to the host's
+    # routable IP from this container's perspective. Testcontainers will
+    # report spawned-container connection URLs using this hostname
+    # (see TESTCONTAINERS_HOST_OVERRIDE below).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       HTTP_PROXY: http://proxy:8080
       HTTPS_PROXY: http://proxy:8080
       NO_PROXY: localhost,127.0.0.1,proxy,docker-proxy
       # Testcontainers reads DOCKER_HOST and routes through the filtered
-      # proxy instead of the host daemon directly. Ryuk is enabled by
-      # default (Testcontainers' container reaper). Image pulls happen
+      # proxy instead of the host daemon directly. Image pulls happen
       # on the host daemon and therefore bypass mitmproxy egress filtering.
       DOCKER_HOST: tcp://docker-proxy:2375
+      # Tell Testcontainers what hostname to report when handing test
+      # code a connection URL for a spawned container. Without this, TC
+      # uses the host from DOCKER_HOST (= `docker-proxy`), which doesn't
+      # listen on the random published ports — only the real host does.
+      TESTCONTAINERS_HOST_OVERRIDE: host.docker.internal
       # Disable Testcontainers' Ryuk reaper. With DOCKER_HOST=tcp://… ,
       # modern Testcontainers no longer mounts the host socket into Ryuk;
       # it spawns Ryuk on the host's default bridge and passes the same

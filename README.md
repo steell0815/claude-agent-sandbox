@@ -309,6 +309,16 @@ secrets, services, nodes, system, plugins, configs, auth.
   attach docker-proxy to it, (c) configure Testcontainers' Ryuk to
   spawn on that network (`testcontainers.ryuk.container.network`
   property; verify against the Testcontainers version in use).
+- **Spawned-container connection URLs use `host.docker.internal`**,
+  driven by `TESTCONTAINERS_HOST_OVERRIDE` in the builder env.
+  Testcontainers' default is to use the host from `DOCKER_HOST`
+  (= `docker-proxy`), but `docker-proxy` only listens on 2375 —
+  not on the random ports the host daemon publishes for spawned
+  test containers. The override redirects connection URLs to
+  `host.docker.internal`, which the builder resolves via an
+  `extra_hosts: [host.docker.internal:host-gateway]` entry that
+  Docker fills in with the host's gateway IP (works through an
+  `internal: true` network on Docker Desktop).
 - If you want a tighter wedge on bind-mount filtering more generally
   (allow socket binds, deny path binds), `wollomatic/socket-proxy`
   does per-field regex filtering. Drop-in upgrade from tecnativa.

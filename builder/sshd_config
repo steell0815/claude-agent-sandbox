@@ -46,7 +46,7 @@ AcceptEnv MAVEN_OPTS MAVEN_ARGS GRADLE_OPTS JAVA_OPTS
 # (`UsePAM no` rules out /etc/environment, and shells are launched
 # non-interactive non-login so /etc/profile isn't sourced either).
 # SetEnv plugs that gap.
-SetEnv DOCKER_HOST=tcp://docker-proxy:2375 TESTCONTAINERS_RYUK_DISABLED=true
+SetEnv DOCKER_HOST=tcp://docker-proxy:2375 TESTCONTAINERS_RYUK_DISABLED=true TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal
 
 # Surface logs on stderr so `docker logs` shows auth events.
 LogLevel INFO
