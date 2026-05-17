@@ -16,12 +16,55 @@
 #   AGENT_WORKDIR=/abs/path /path/to/run-agent.sh
 #   ./scripts/run-agent.sh -p "summarize the repo"   # extra args go to claude
 #
-# Symlink onto PATH (e.g. `ln -s "$PWD/scripts/run-agent.sh" ~/.local/bin/cas`)
-# so you can just type `cas` from any project.
+# Env vars:
+#   CAS_HOME        explicit path to the claude-agent-sandbox checkout.
+#                   Overrides the script-location heuristic — set this if
+#                   you copied (didn't symlink) the script, or keep
+#                   multiple checkouts.
+#   AGENT_WORKDIR   host dir bind-mounted at /workspace. Defaults to $PWD
+#                   when invoked outside the repo; ./project/ when inside.
+#
+# Install on PATH (pick whichever you prefer):
+#   ln -s "$PWD/scripts/run-agent.sh" ~/.local/bin/cas       # symlink
+#   echo 'export CAS_HOME=~/dev/claude-agent-sandbox' >> ~/.zshrc \
+#     && cp scripts/run-agent.sh ~/.local/bin/cas             # env-var path
+#
+# Locate the claude-agent-sandbox checkout. Resolution order:
+#   1. $CAS_HOME (explicit override — handy if this script was copied, not
+#      symlinked, or if you keep multiple checkouts and want to pick one).
+#   2. Symlink-aware resolution from the script's own path, so
+#      ~/.local/bin/cas -> .../claude-agent-sandbox/scripts/run-agent.sh works.
+# Both modes validate that the resolved dir actually contains the repo.
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -n "${CAS_HOME:-}" ]]; then
+  REPO_ROOT="$CAS_HOME"
+else
+  # Walk symlinks portably (no GNU `readlink -f` dependency).
+  SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
+  while [ -L "$SCRIPT_PATH" ]; do
+    SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
+    SCRIPT_PATH="$(readlink "$SCRIPT_PATH")"
+    [[ "$SCRIPT_PATH" != /* ]] && SCRIPT_PATH="$SCRIPT_DIR/$SCRIPT_PATH"
+  done
+  REPO_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
+fi
+
+if [[ ! -f "$REPO_ROOT/docker-compose.yml" ]]; then
+  cat >&2 <<EOF
+ERROR: claude-agent-sandbox not found at: $REPO_ROOT
+(no docker-compose.yml there)
+
+Either:
+  - clone/checkout this repo and re-symlink the wrapper:
+      ln -sf "/path/to/claude-agent-sandbox/scripts/run-agent.sh" "$0"
+  - set CAS_HOME=/path/to/claude-agent-sandbox in your shell.
+EOF
+  exit 64
+fi
+
+REPO_ROOT="$(cd "$REPO_ROOT" && pwd)"
 INVOCATION_DIR="$PWD"
 
 # Decide the workdir to mount.

@@ -86,27 +86,29 @@ in this order:
 2. `$PWD` when the script is invoked from outside this repo.
 3. `./project/` when invoked from the repo root (preserves the quickstart).
 
-So the common case is "cd to the project, run the wrapper":
+So the common case is "cd to the project, run the wrapper".
+
+**Install once, run from anywhere.** Two install patterns:
 
 ```sh
-# One-time: symlink the wrapper onto your PATH so you can call it `cas`
-# from anywhere. Adjust the install dir to taste.
+# (a) Symlink — wrapper finds the repo by walking back from its own path.
 ln -s "$PWD/scripts/run-agent.sh" ~/.local/bin/cas
 
-# Then, from any project:
+# (b) Copy + env var — wrapper uses $CAS_HOME to locate the repo.
+#     Handy if you keep multiple checkouts or pull the script via dotfiles.
+cp scripts/run-agent.sh ~/.local/bin/cas
+echo 'export CAS_HOME=~/dev/claude-agent-sandbox' >> ~/.zshrc
+```
+
+Then, from any project:
+
+```sh
 cd ~/code/my-java-service
 cas                          # mounts $PWD at /workspace
 cas -p "audit the pom.xml"   # extra args forwarded to `claude`
-```
 
-Or without a symlink:
-
-```sh
-cd ~/code/my-java-service
-/abs/path/to/claude-agent-sandbox/scripts/run-agent.sh
-
-# Or pin the path explicitly (handy from CI):
-AGENT_WORKDIR=/abs/path/to/project ./scripts/run-agent.sh
+# Or pin the workdir explicitly (handy from CI):
+AGENT_WORKDIR=/abs/path/to/project cas
 ```
 
 Notes:
