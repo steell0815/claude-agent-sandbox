@@ -15,7 +15,7 @@
           },
           {
             "type": "command",
-            "command": "/etc/claude-code/hooks/block-npm-global-install.sh"
+            "command": "/etc/claude-code/hooks/block-node-global-install.sh"
           }
         ]
       }
