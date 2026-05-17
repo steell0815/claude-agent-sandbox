@@ -37,8 +37,20 @@ jobs:
       # system trust stores at image build time, so it must exist on
       # the host first. The proxy-init service does exactly this (it's
       # what step 1 of the README quickstart runs).
+      #
+      # The `chown 1000` before running matches the `mitmproxy` user
+      # inside the proxy image (uid 1000) — GitHub runners are uid
+      # 1001, so without this the bind-mounted `./ca/` is not
+      # writable from inside the container and the bootstrap silently
+      # fails ("CA was not generated"). After bootstrap we chown the
+      # tree back to the runner so subsequent build steps can read
+      # the cert (it's already 0644, but consistency is nice).
       - name: Bootstrap mitmproxy CA
-        run: docker compose run --rm proxy-init
+        run: |
+          mkdir -p ca
+          sudo chown 1000:1000 ca
+          docker compose run --rm proxy-init
+          sudo chown -R "$(id -u):$(id -g)" ca
 
       - name: Start application
         run: docker compose up -d --build
