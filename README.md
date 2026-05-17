@@ -155,6 +155,12 @@ first is advisory.
      across npm (`npm install -g`), pnpm (`pnpm add -g`), and yarn
      classic (`yarn global add`). Local `<pm> install <pkg>` and
      read-only `list`/`view` stay allowed.
+   - `block-pip-install.sh` — denies `pip install` / `pip3 install`,
+     `python -m pip install`, and `pipx install`/etc. Use a venv inside
+     `/workspace` for project-local Python deps.
+   - `block-cargo-install.sh` — denies `cargo install` / `cargo
+     uninstall`. Project-scoped operations (`build`, `run`, `test`,
+     `check`, `fmt`, `clippy`, …) stay allowed.
 
 To add another hook: drop a new script under `agent/sandbox-hooks/`,
 list it in `agent/sandbox-settings.json` under the appropriate
@@ -443,7 +449,7 @@ and `git-integrity.yml` (`git fsck`).
 │   ├── delegate-to-builder     # toolchain wrapper (mvn/gradle/java/... symlink to this)
 │   ├── sandbox-guide.md        # injected into the system prompt every session
 │   ├── sandbox-settings.json   # claude --settings; wires up PreToolUse hooks
-│   └── sandbox-hooks/          # PreToolUse hook scripts (block-docker-cli, block-apt-install, block-node-global-install)
+│   └── sandbox-hooks/          # PreToolUse hook scripts (block-docker-cli, block-apt-install, block-node-global-install, block-pip-install, block-cargo-install)
 ├── builder/
 │   ├── Dockerfile              # JDK 25 + Maven + Node + Chromium + sshd
 │   ├── entrypoint.sh           # host-key gen, install authorized_keys, exec sshd

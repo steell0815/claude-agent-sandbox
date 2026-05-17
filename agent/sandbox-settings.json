@@ -16,6 +16,14 @@
           {
             "type": "command",
             "command": "/etc/claude-code/hooks/block-node-global-install.sh"
+          },
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/block-pip-install.sh"
+          },
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/block-cargo-install.sh"
           }
         ]
       }
