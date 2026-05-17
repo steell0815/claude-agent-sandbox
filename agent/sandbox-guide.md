@@ -124,9 +124,15 @@ secrets, services, nodes, system, plugins, configs, auth.
    test pulls a malicious image, the host pulls and runs it. Stick
    to images from trusted registries (`docker.io/library/...`,
    pinned tags) and don't trust arbitrary `latest` tags.
-2. **Ryuk (Testcontainers' reaper) is enabled** and works correctly
-   — no need to set `TESTCONTAINERS_RYUK_DISABLED`. Containers
-   started by tests get cleaned up when the JVM exits.
+2. **Ryuk (Testcontainers' reaper) is disabled** in this sandbox
+   via `TESTCONTAINERS_RYUK_DISABLED=true`. Reason: with
+   `DOCKER_HOST=tcp://…` Testcontainers spawns Ryuk on the host's
+   default bridge network, where it can't resolve `docker-proxy` —
+   the compose-internal DNS doesn't reach there. Cleanup still
+   happens on normal JVM exit because Testcontainers spawns its
+   containers with `--rm`. Don't try to re-enable Ryuk; if you see
+   `Could not find a valid Docker environment` or similar from
+   Testcontainers, the fix is somewhere else, not Ryuk.
 3. **The proxy does not filter request bodies.** So technically a
    container-create call could include `HostConfig.Binds: ["/:/host"]`
    and the host daemon would honor it. Don't construct such calls

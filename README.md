@@ -284,21 +284,34 @@ secrets, services, nodes, system, plugins, configs, auth.
 
 **Security tradeoffs to be deliberate about:**
 
-- The Ryuk reaper container Testcontainers spawns needs to bind-mount
-  `/var/run/docker.sock` into itself. We allow that — and consequently
-  the proxy doesn't (and can't, with tecnativa) filter individual
-  `HostConfig.Binds` entries. A client that can reach `2375` can
-  request any bind mount; in this sandbox that client is the builder,
-  and via `ssh builder docker …` effectively the LLM. Treat
-  `docker-proxy:2375` as a privileged surface and judge accordingly.
+- The proxy can't filter request bodies (tecnativa works at the
+  endpoint level, not the JSON-field level). A client that can reach
+  `2375` can request any bind mount, including `/:/host`. In this
+  sandbox that client is the builder — and via `ssh builder docker
+  …` effectively the LLM, which is why `block-docker-cli.sh` denies
+  raw `docker` invocations at the Bash-tool layer. Treat
+  `docker-proxy:2375` as a privileged surface and don't bypass that
+  hook.
 - Image pulls happen on the *host* daemon, not through `mitmproxy`.
   Whatever your tests pull comes down the host's network without the
   sandbox's allowlist applied. Pin Testcontainers images to trusted
   registries (`docker.io/library/...`, hashed/tagged versions); don't
   trust arbitrary `latest` from unknown publishers.
-- If you want a tighter wedge (allow Ryuk's socket bind but deny all
-  other binds), `wollomatic/socket-proxy` does per-field regex
-  filtering. Drop-in upgrade from tecnativa.
+- **Ryuk is disabled** (`TESTCONTAINERS_RYUK_DISABLED=true` on the
+  builder). With `DOCKER_HOST=tcp://…`, Testcontainers spawns Ryuk
+  on the host's default bridge network where it can't resolve
+  `docker-proxy` (compose-internal DNS doesn't reach there).
+  Cleanup still works on normal JVM exit (Testcontainers spawns with
+  `--rm`). Tradeoff: a JVM crash before `--rm` fires leaks
+  containers until the next `docker compose down`. For a dev
+  sandbox this is acceptable; if you need crash-safe cleanup, the
+  re-enabling path is (a) add a non-internal compose network, (b)
+  attach docker-proxy to it, (c) configure Testcontainers' Ryuk to
+  spawn on that network (`testcontainers.ryuk.container.network`
+  property; verify against the Testcontainers version in use).
+- If you want a tighter wedge on bind-mount filtering more generally
+  (allow socket binds, deny path binds), `wollomatic/socket-proxy`
+  does per-field regex filtering. Drop-in upgrade from tecnativa.
 
 ## Configuration
 

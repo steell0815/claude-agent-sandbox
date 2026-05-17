@@ -150,6 +150,19 @@ services:
       # default (Testcontainers' container reaper). Image pulls happen
       # on the host daemon and therefore bypass mitmproxy egress filtering.
       DOCKER_HOST: tcp://docker-proxy:2375
+      # Disable Testcontainers' Ryuk reaper. With DOCKER_HOST=tcp://… ,
+      # modern Testcontainers no longer mounts the host socket into Ryuk;
+      # it spawns Ryuk on the host's default bridge and passes the same
+      # DOCKER_HOST env. Ryuk then can't resolve `docker-proxy` because
+      # that name is a compose-internal DNS entry, not visible from the
+      # default bridge. Disabling Ryuk avoids the network surgery (a
+      # shared bridge attached to docker-proxy + a TC property to spawn
+      # Ryuk on it) while staying safe enough for a dev sandbox:
+      # Testcontainers spawns its containers with --rm, so they
+      # auto-clean on normal JVM exit. The only leak path is a JVM
+      # crash before --rm fires; `docker compose down` between sessions
+      # sweeps anything stranded.
+      TESTCONTAINERS_RYUK_DISABLED: "true"
     mem_limit: ${BUILDER_MEM_LIMIT:-6g}
     cpus: ${BUILDER_CPUS:-4}
     restart: unless-stopped
