@@ -32,6 +32,15 @@ PrintMotd no
 # the boundary, nothing path- or auth-related.
 AcceptEnv MAVEN_OPTS MAVEN_ARGS GRADLE_OPTS JAVA_OPTS
 
+# Set DOCKER_HOST for every session sshd opens. Testcontainers and
+# anything else that respects DOCKER_HOST will route through the
+# filtered docker-proxy automatically. The container's process env
+# *does* have this set (via compose), but sshd-opened shells don't
+# inherit it — sshd starts the user shell with a near-empty env, and
+# we run with `UsePAM no` so /etc/environment isn't read either.
+# SetEnv plugs that gap in one place.
+SetEnv DOCKER_HOST=tcp://docker-proxy:2375
+
 # Surface logs on stderr so `docker logs` shows auth events.
 LogLevel INFO
 SyslogFacility AUTH
