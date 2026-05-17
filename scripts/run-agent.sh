@@ -98,4 +98,18 @@ fi
 echo "workdir: $AGENT_WORKDIR -> /workspace" >&2
 
 cd "$REPO_ROOT"
+
+# Reconcile the long-running builder's /workspace mount with the current
+# AGENT_WORKDIR. `docker compose run agent` only *starts* its
+# dependencies if they're missing; it never recreates a running builder
+# whose bind-mount has drifted. Without this, switching `cas` between
+# projects leaves the builder pinned to whichever workdir it was first
+# started with — and `mvn` (which the agent forwards over SSH) operates
+# on stale or absent files.
+#
+# `up -d builder` no-ops if the resolved config matches what's running,
+# and recreates the container only when AGENT_WORKDIR (or any other
+# tracked field) actually changed. Cheap on the happy path.
+docker compose up -d builder >/dev/null
+
 exec docker compose run --rm agent "$@"
