@@ -1,0 +1,30 @@
+# Hosts the builder needs to fetch toolchain artifacts.
+# Mount this file into the proxy and point ALLOWLIST_EXTRA at it
+# (see README "Builder" section).
+#
+# One Python regex per line (anchored, same dialect as DEFAULT_ALLOWLIST).
+# Add project-specific repos (Artifactory, Nexus, internal mirrors) below.
+
+# Maven Central
+^repo\.maven\.apache\.org$
+^repo1\.maven\.org$
+
+# Gradle distributions + plugin portal
+^services\.gradle\.org$
+^downloads\.gradle\.org$
+^plugins\.gradle\.org$
+^plugins-artifacts\.gradle\.org$
+
+# npm / pnpm registry
+^registry\.npmjs\.org$
+^registry\.npmmirror\.com$
+
+# Sonatype OSS (snapshots, releases staging used by many OSS libs)
+^oss\.sonatype\.org$
+^s01\.oss\.sonatype\.org$
+
+# JitPack
+^jitpack\.io$
+
+# Spring repositories (only needed if your project depends on Spring milestones / snapshots)
+^repo\.spring\.io$

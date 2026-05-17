@@ -19,6 +19,7 @@ RUN apt-get update \
       python3 \
       jq \
       tini \
+      openssh-client \
  && rm -rf /var/lib/apt/lists/*
 
 # Bake the proxy CA as a system trust anchor so npm/pip/git/curl/the
@@ -49,6 +50,14 @@ RUN userdel --remove node \
 RUN install -d -o agent -g agent /home/agent/sandbox-state \
  && ln -s /home/agent/sandbox-state/claude.json /home/agent/.claude.json \
  && chown -h agent:agent /home/agent/.claude.json
+
+# SSH config so the agent can shell into the builder service via
+# `ssh builder mvn ...`. The private key is mounted at runtime from the
+# builder-keys volume populated by the keys-init service.
+RUN install -d -o agent -g agent -m 0700 /home/agent/.ssh \
+ && install -d -o agent -g agent -m 0755 /run/builder-keys
+COPY --chown=agent:agent agent/ssh-config /home/agent/.ssh/config
+RUN chmod 600 /home/agent/.ssh/config
 
 ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
     REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt \

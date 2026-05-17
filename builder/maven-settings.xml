@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Sandbox builder Maven settings.
+
+  All artifact resolution routes through the mitmproxy at proxy:8080.
+  The proxy enforces the host allowlist and emits an audit trail; the JVM
+  trusts mitmproxy's CA because we keytool-imported it into cacerts at
+  image build time.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                              https://maven.apache.org/xsd/settings-1.0.0.xsd">
+
+  <localRepository>${user.home}/.m2/repository</localRepository>
+
+  <proxies>
+    <proxy>
+      <id>mitm-https</id>
+      <active>true</active>
+      <protocol>https</protocol>
+      <host>proxy</host>
+      <port>8080</port>
+      <nonProxyHosts>localhost|127.0.0.1|proxy</nonProxyHosts>
+    </proxy>
+    <proxy>
+      <id>mitm-http</id>
+      <active>true</active>
+      <protocol>http</protocol>
+      <host>proxy</host>
+      <port>8080</port>
+      <nonProxyHosts>localhost|127.0.0.1|proxy</nonProxyHosts>
+    </proxy>
+  </proxies>
+</settings>

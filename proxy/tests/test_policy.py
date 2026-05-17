@@ -48,6 +48,24 @@ def test_default_allowlist_blocks_unrelated_host(policy_module, silent_audit):
     assert not p.host_allowed("evil.example.com")
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "repo.maven.apache.org",
+        "repo1.maven.org",
+        "services.gradle.org",
+        "downloads.gradle.org",
+        "plugins.gradle.org",
+        "registry.npmjs.org",
+        "oss.sonatype.org",
+        "jitpack.io",
+    ],
+)
+def test_default_allowlist_admits_build_toolchain_hosts(policy_module, silent_audit, host):
+    p = make_policy(policy_module, silent_audit=silent_audit)
+    assert p.host_allowed(host), f"{host} should be admitted by the default allowlist"
+
+
 def test_extra_allowlist_loaded_from_file(policy_module, tmp_path, monkeypatch, silent_audit):
     extra = tmp_path / "allow.txt"
     extra.write_text("# my comment\n^github\\.com$\n  \n")

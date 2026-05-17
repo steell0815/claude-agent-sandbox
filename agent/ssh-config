@@ -1,0 +1,14 @@
+# Agent -> builder. The builder service runs sshd on 2222 inside the
+# internal compose network. Host key is generated on first start by the
+# builder entrypoint; accept-new pins it after the first successful connect.
+
+Host builder
+  HostName builder
+  Port 2222
+  User builder
+  IdentityFile /run/builder-keys/id_ed25519
+  IdentitiesOnly yes
+  StrictHostKeyChecking accept-new
+  UserKnownHostsFile /tmp/known_hosts.builder
+  ServerAliveInterval 30
+  ServerAliveCountMax 3

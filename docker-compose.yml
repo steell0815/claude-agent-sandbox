@@ -1,6 +1,8 @@
-# Three services in one stack:
+# Services in this stack:
 #   proxy-init  one-shot — generates the mitmproxy CA into the ./ca volume.
 #   proxy       mitmdump with policy.py — sole bridge to the internet.
+#   keys-init   one-shot — generates the agent<->builder ed25519 keypair.
+#   builder     long-running JDK 25 + Maven + Node sshd, sibling of the agent.
 #   agent       Claude Code, attached only to the internal network.
 #
 # Hardening rings (defense in depth):
@@ -50,6 +52,47 @@ services:
       - no-new-privileges:true
     logging: *default-logging
 
+  keys-init:
+    build:
+      context: ./keys-init
+    volumes:
+      - builder-keys:/keys
+    network_mode: none
+    restart: "no"
+    logging: *default-logging
+
+  builder:
+    build:
+      context: .
+      dockerfile: builder/Dockerfile
+      args:
+        CA_CERT_PATH: ca/mitmproxy-ca-cert.pem
+    depends_on:
+      proxy:
+        condition: service_started
+      keys-init:
+        condition: service_completed_successfully
+    volumes:
+      - ${AGENT_WORKDIR:-./project}:/workspace:rw
+      - builder-keys:/run/builder-keys:ro
+      - builder-m2:/home/builder/.m2/repository
+      - builder-gradle-cache:/home/builder/.gradle/caches
+    networks:
+      - internal
+    user: "1001:1001"
+    working_dir: /workspace
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      HTTP_PROXY: http://proxy:8080
+      HTTPS_PROXY: http://proxy:8080
+      NO_PROXY: localhost,127.0.0.1,proxy
+    mem_limit: ${BUILDER_MEM_LIMIT:-6g}
+    cpus: ${BUILDER_CPUS:-4}
+    restart: unless-stopped
+    logging: *default-logging
+
   agent:
     build:
       context: .
@@ -58,9 +101,17 @@ services:
         CA_CERT_PATH: ca/mitmproxy-ca-cert.pem
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
     depends_on:
-      - proxy
+      proxy:
+        condition: service_started
+      keys-init:
+        condition: service_completed_successfully
+      builder:
+        condition: service_started
     volumes:
-      - ./project:/workspace:rw
+      # Workdir bind-mount. Defaults to the bundled ./project/ scratch dir.
+      # Override with AGENT_WORKDIR=/abs/path (or use scripts/run-agent.sh,
+      # which sets it to $PWD by default).
+      - ${AGENT_WORKDIR:-./project}:/workspace:rw
       - ${HOME}/.claude:/home/agent/.claude:ro
       - logs:/var/log/proxy:ro
       # Persists ~/.claude.json (symlinked in the image) across runs so
@@ -68,6 +119,9 @@ services:
       # on every container start. Scoped to this stack — wipe with
       # `docker volume rm claude-agent-sandbox_sandbox-state`.
       - sandbox-state:/home/agent/sandbox-state
+      # Read-only access to the agent's SSH private key for talking to the
+      # builder. Populated by the keys-init one-shot.
+      - builder-keys:/run/builder-keys:ro
     networks:
       - internal
     user: "1000:1000"
@@ -108,3 +162,6 @@ networks:
 volumes:
   logs:
   sandbox-state:
+  builder-keys:
+  builder-m2:
+  builder-gradle-cache:

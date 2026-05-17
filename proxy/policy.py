@@ -23,11 +23,29 @@ from typing import Iterable
 from mitmproxy import http
 
 DEFAULT_ALLOWLIST = (
+    # --- Claude Code control plane ---
     r"^api\.anthropic\.com$",
     r"^statsig\.anthropic\.com$",
     # Console / OAuth surface used by Claude Code at startup; without it
     # the agent fails to boot with "Failed to connect to platform.claude.com".
     r"^platform\.claude\.com$",
+
+    # --- Build toolchain artifact hosts (used by the `builder` service) ---
+    # Maven Central
+    r"^repo\.maven\.apache\.org$",
+    r"^repo1\.maven\.org$",
+    # Gradle distributions + plugin portal
+    r"^services\.gradle\.org$",
+    r"^downloads\.gradle\.org$",
+    r"^plugins\.gradle\.org$",
+    r"^plugins-artifacts\.gradle\.org$",
+    # npm / pnpm registry
+    r"^registry\.npmjs\.org$",
+    # Sonatype OSS (snapshots + staging used by many OSS Java libs)
+    r"^oss\.sonatype\.org$",
+    r"^s01\.oss\.sonatype\.org$",
+    # JitPack
+    r"^jitpack\.io$",
 )
 
 DEFAULT_DLP = (

@@ -73,9 +73,123 @@ docker compose down
 > you only need to invoke the exporter directly when scripting around
 > `docker compose run --rm agent` yourself.
 
-The agent's working directory is `./project/` (bind-mounted at `/workspace`).
-Drop the source you want the agent to work on there — or replace the bind
-target with the project you want to attach to.
+The agent's working directory is `./project/` (bind-mounted at `/workspace`)
+by default. To attach the sandbox to any other project — a Java repo, a
+playground checkout, anything — point it at that directory instead.
+
+### Attach the sandbox to an arbitrary directory
+
+`scripts/run-agent.sh` resolves which host path to mount at `/workspace`
+in this order:
+
+1. `AGENT_WORKDIR` (absolute path) if set.
+2. `$PWD` when the script is invoked from outside this repo.
+3. `./project/` when invoked from the repo root (preserves the quickstart).
+
+So the common case is "cd to the project, run the wrapper":
+
+```sh
+# One-time: symlink the wrapper onto your PATH so you can call it `cas`
+# from anywhere. Adjust the install dir to taste.
+ln -s "$PWD/scripts/run-agent.sh" ~/.local/bin/cas
+
+# Then, from any project:
+cd ~/code/my-java-service
+cas                          # mounts $PWD at /workspace
+cas -p "audit the pom.xml"   # extra args forwarded to `claude`
+```
+
+Or without a symlink:
+
+```sh
+cd ~/code/my-java-service
+/abs/path/to/claude-agent-sandbox/scripts/run-agent.sh
+
+# Or pin the path explicitly (handy from CI):
+AGENT_WORKDIR=/abs/path/to/project ./scripts/run-agent.sh
+```
+
+Notes:
+
+- The path must be one Docker Desktop is allowed to share (anything under
+  `$HOME` is by default on macOS).
+- All projects share the same `sandbox-state` volume and proxy. If you want
+  per-project state (`~/.claude.json`, history), set
+  `COMPOSE_PROJECT_NAME=cas-myproj` before invoking the wrapper to get a
+  distinct stack name and isolated volumes.
+- The agent runs as uid 1000. On macOS this is transparent; on Linux,
+  files you create from inside the sandbox will be owned by uid 1000 on
+  the host.
+
+## Builder (Java / Node toolchain)
+
+The agent image is intentionally minimal — Node + git + curl + python3 +
+jq, no JDK or Maven. To build/test JVM or Node projects from inside the
+sandbox there's a sibling **builder** service: a long-running container
+with Corretto JDK 25, Maven 3.9, Node 22, pnpm, git, and headless Chrome.
+The agent reaches it over SSH on the internal compose network — same
+mental model as a Jenkins SSH agent, without giving the LLM access to
+the host Docker socket.
+
+```text
++---------+    ssh:2222     +-----------+    HTTPS via proxy    +---------------+
+|  agent  |  ------------>  |  builder  |  ------------------>  | Maven Central |
++---------+                 +-----------+                       +---------------+
+       \                         /
+        \                       /
+         +-- /workspace (rw) --+    same host dir bind-mounted into both
+```
+
+How to use it from inside the sandbox:
+
+```sh
+ssh builder mvn -f /workspace/pom.xml -B verify
+ssh builder ./gradlew -p /workspace build
+ssh builder pnpm --dir /workspace install
+```
+
+Artifact hosts (Maven Central, Gradle, npm, Sonatype OSS, JitPack) are in
+the proxy's default allowlist — no extra config needed for those. For
+**internal repositories** (Nexus, Artifactory, internal mirrors) add them
+via `ALLOWLIST_EXTRA`:
+
+```sh
+# In .env:
+ALLOWLIST_EXTRA=/etc/proxy/builder-allowlist.txt
+```
+
+…and mount your extra-allowlist file into the proxy via an overlay:
+
+```yaml
+# docker-compose.override.yml
+services:
+  proxy:
+    volumes:
+      - ./my-internal-allowlist.txt:/etc/proxy/builder-allowlist.txt:ro
+```
+
+`builder/allowlist.txt` in the repo lists the artifact hosts already in
+the default; use it as a reference for what regexes look like.
+
+Notes:
+
+- **SSH key.** Generated once by the `keys-init` one-shot into the
+  `builder-keys` named volume on first `docker compose up`. Wipe and
+  regenerate with `docker volume rm <project>_builder-keys`.
+- **Truststore.** The mitmproxy CA is imported into the JVM's `cacerts`
+  at builder image build time, so Maven/Gradle TLS to Maven Central
+  through the proxy succeeds without `-Dtrust=all` hacks.
+- **Caches.** `~/.m2/repository` and `~/.gradle/caches` inside the
+  builder are backed by named volumes (`builder-m2`, `builder-gradle-cache`)
+  and persist across runs.
+- **Re-vendoring.** `builder/Dockerfile` is a vendored copy of
+  `bks-digital-sales/docker/mvnj25chromium/docker/dockerfile` plus
+  sandbox-specific additions (sshd, builder user, CA into truststore).
+  Re-sync when the upstream image changes; the header comment lists the
+  diff so it's easy to re-apply.
+- **No Docker socket.** The agent has no access to `/var/run/docker.sock`
+  and can't spawn arbitrary containers — it can only reach the builder
+  service that's already in the compose stack.
 
 ## Configuration
 
@@ -91,6 +205,9 @@ Copy `.env.example` → `.env` and uncomment knobs as needed. Common ones:
 | `AUDIT_BACKUPS`        | `10`               | Rotated audit files kept (×50 MiB ≈ 500 MiB ceiling).    |
 | `AGENT_MEM_LIMIT`      | `4g`               | Agent container memory cap.                              |
 | `AGENT_CPUS`           | `2`                | Agent container CPU cap.                                 |
+| `BUILDER_MEM_LIMIT`    | `6g`               | Builder container memory cap (JVM + Gradle daemons).     |
+| `BUILDER_CPUS`         | `4`                | Builder container CPU cap.                               |
+| `AGENT_WORKDIR`        | `./project`        | Host path bind-mounted at `/workspace` in agent+builder. |
 
 To pass a project-specific allowlist, mount it onto the proxy and point the
 env var at it. Example overlay (`docker-compose.override.yml`):
