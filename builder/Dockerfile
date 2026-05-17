@@ -40,10 +40,13 @@ RUN apt-get update -qqy \
  && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
 # JDK 25 (Corretto), Node 22, pnpm, git, openssh-client.
+# Bump PNPM_VERSION as needed; hadolint DL3016 requires npm pins.
+ARG PNPM_VERSION=11.1.2
 # hadolint ignore=DL3008,DL4006
 RUN apt-get update \
  && apt-get install -y --no-install-recommends curl gnupg openssh-client \
- && export GNUPGHOME="$(mktemp -d)" \
+ && GNUPGHOME="$(mktemp -d)" \
+ && export GNUPGHOME \
  && curl -fL https://apt.corretto.aws/corretto.key | gpg --batch --import \
  && gpg --batch --export '6DC3636DAE534049C8B94623A122542AB04F24E3' > /usr/share/keyrings/corretto.gpg \
  && unset GNUPGHOME \
@@ -52,7 +55,7 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends java-25-amazon-corretto-jdk git \
  && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
  && apt-get install -y --no-install-recommends nodejs \
- && npm install -g pnpm \
+ && npm install -g "pnpm@${PNPM_VERSION}" \
  && rm -rf /var/lib/apt/lists/*
 
 ENV JAVA_HOME="/usr/lib/jvm/java-25-amazon-corretto"
@@ -69,11 +72,12 @@ RUN ln -s ${MAVEN_HOME}/bin/mvn /usr/bin/mvn
 # ---------------------------------------------------------------------------
 
 # OS trust store: every TLS client (curl, git, npm) sees the proxy as legit.
+# JVM trust store (cacerts): Maven/Gradle don't read the OS bundle, so we
+# also import the CA explicitly with keytool — same RUN to keep the trust
+# install atomic and silence DL3059.
 COPY ${CA_CERT_PATH} /usr/local/share/ca-certificates/mitm.crt
-RUN update-ca-certificates
-
-# JVM trust store: Maven/Gradle don't read the OS bundle, so import explicitly.
-RUN keytool -importcert -noprompt -trustcacerts \
+RUN update-ca-certificates \
+ && keytool -importcert -noprompt -trustcacerts \
       -alias mitmproxy-ca \
       -file /usr/local/share/ca-certificates/mitm.crt \
       -cacerts -storepass changeit

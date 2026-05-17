@@ -225,3 +225,6 @@ ca/
 proxy/.mitmproxy/
 # Generated devcontainer overlay (per-project)
 .devcontainer/.local/
+
+.DS_Store
+

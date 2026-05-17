@@ -8,6 +8,10 @@
 
 FROM alpine:3.20
 
+# DL3018 ignored: this image only runs `ssh-keygen` once at first compose
+# up to produce an ed25519 keypair. The openssh-keygen version is not
+# part of any security surface — bumping it with alpine:3.20 is fine.
+# hadolint ignore=DL3018
 RUN apk add --no-cache openssh-keygen \
  && adduser -D -u 1000 keys-init \
  && mkdir -p /keys \
