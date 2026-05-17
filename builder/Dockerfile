@@ -109,5 +109,11 @@ ENV HTTP_PROXY=http://proxy:8080 \
 
 EXPOSE 2222
 
+# Default to the unprivileged builder user. docker-compose.yml also pins
+# `user: "1001:1001"`; baking the USER here covers `docker run` outside
+# compose and satisfies DS-0002 (no implicit root container).
+USER builder
+WORKDIR /home/builder
+
 # tini reaps zombies; the entrypoint sets up host keys + authorized_keys then execs sshd.
 ENTRYPOINT ["/usr/bin/tini", "--", "/usr/local/bin/builder-entrypoint.sh"]

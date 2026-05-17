@@ -2,9 +2,10 @@
 # keys-init: ensure the builder-keys volume contains an ed25519 keypair.
 # Idempotent — re-runs are a no-op once the keys exist.
 #
-# Ownership/permissions are set so:
-#   - agent (uid 1000) reads id_ed25519       (0600, owner=1000)
-#   - builder (uid 1001) reads id_ed25519.pub (0644, owner=1000)
+# Runs as the keys-init user (uid 1000). ssh-keygen produces files owned
+# by that uid with the canonical 0600 / 0644 perms, which is what the
+# agent (also uid 1000) and the builder (uid 1001, only needs the .pub)
+# expect — no runtime chown required.
 
 set -eu
 
@@ -17,9 +18,5 @@ if [ ! -f "$KEY" ]; then
 else
   echo "keys-init: existing keypair found in $KEYDIR — leaving it alone" >&2
 fi
-
-chown 1000:1000 "$KEY" "$KEY.pub"
-chmod 0600 "$KEY"
-chmod 0644 "$KEY.pub"
 
 echo "keys-init: done" >&2
