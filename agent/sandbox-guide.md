@@ -99,6 +99,41 @@ by both containers, so once you've set `user.name` / `user.email` for
 the repo (the agent typically does this on first commit), the builder
 picks it up automatically — no separate setup needed.
 
+## Testcontainers / Docker-from-builder
+
+The builder has `DOCKER_HOST=tcp://docker-proxy:2375` pre-set. That's a
+filtered proxy in front of the host Docker daemon, not the host
+daemon directly. Testcontainers (and anything else that respects
+`DOCKER_HOST`) will Just Work — spinning up databases, Kafka, redis,
+selenium grids, etc. for integration tests.
+
+```sh
+# Maven IT phase that uses Testcontainers — runs through the proxy.
+ssh builder mvn -f /workspace/pom.xml -B verify
+```
+
+What the proxy allows: container CRUD, exec, image pulls, networks,
+volumes, events, info, version. What it denies: build, swarm,
+secrets, services, nodes, system, plugins, configs, auth.
+
+**Three caveats worth knowing:**
+
+1. **Image pulls bypass the mitmproxy egress filter.** Any image
+   Testcontainers asks for is pulled by the *host* daemon over the
+   host's network, not through the sandbox's allowlisted proxy. If a
+   test pulls a malicious image, the host pulls and runs it. Stick
+   to images from trusted registries (`docker.io/library/...`,
+   pinned tags) and don't trust arbitrary `latest` tags.
+2. **Ryuk (Testcontainers' reaper) is enabled** and works correctly
+   — no need to set `TESTCONTAINERS_RYUK_DISABLED`. Containers
+   started by tests get cleaned up when the JVM exits.
+3. **The proxy does not filter request bodies.** So technically a
+   container-create call could include `HostConfig.Binds: ["/:/host"]`
+   and the host daemon would honor it. Don't construct such calls
+   yourself; you'd be willingly breaking the sandbox. The agent
+   should never need to spawn raw `docker` containers — let
+   Testcontainers / build tooling do it.
+
 ## Network egress
 
 Both the agent and the builder reach the internet only via the

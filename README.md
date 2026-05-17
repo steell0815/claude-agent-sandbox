@@ -189,9 +189,39 @@ Notes:
   sandbox-specific additions (sshd, builder user, CA into truststore).
   Re-sync when the upstream image changes; the header comment lists the
   diff so it's easy to re-apply.
-- **No Docker socket.** The agent has no access to `/var/run/docker.sock`
-  and can't spawn arbitrary containers — it can only reach the builder
-  service that's already in the compose stack.
+- **Docker access.** The agent has no `/var/run/docker.sock`. The
+  builder talks to a `docker-proxy` (tecnativa/docker-socket-proxy)
+  on the internal network — see the **Testcontainers** section below.
+
+### Testcontainers
+
+The builder sets `DOCKER_HOST=tcp://docker-proxy:2375`, where
+`docker-proxy` is a `tecnativa/docker-socket-proxy` filtering the
+host Docker daemon. Testcontainers picks up `DOCKER_HOST`
+automatically: `mvn verify` with Testcontainers-backed integration
+tests works inside the sandbox.
+
+What the proxy allows: container CRUD, exec, image pulls, networks,
+volumes, info, version, events. What it denies: build, swarm,
+secrets, services, nodes, system, plugins, configs, auth.
+
+**Security tradeoffs to be deliberate about:**
+
+- The Ryuk reaper container Testcontainers spawns needs to bind-mount
+  `/var/run/docker.sock` into itself. We allow that — and consequently
+  the proxy doesn't (and can't, with tecnativa) filter individual
+  `HostConfig.Binds` entries. A client that can reach `2375` can
+  request any bind mount; in this sandbox that client is the builder,
+  and via `ssh builder docker …` effectively the LLM. Treat
+  `docker-proxy:2375` as a privileged surface and judge accordingly.
+- Image pulls happen on the *host* daemon, not through `mitmproxy`.
+  Whatever your tests pull comes down the host's network without the
+  sandbox's allowlist applied. Pin Testcontainers images to trusted
+  registries (`docker.io/library/...`, hashed/tagged versions); don't
+  trust arbitrary `latest` from unknown publishers.
+- If you want a tighter wedge (allow Ryuk's socket bind but deny all
+  other binds), `wollomatic/socket-proxy` does per-field regex
+  filtering. Drop-in upgrade from tecnativa.
 
 ## Configuration
 

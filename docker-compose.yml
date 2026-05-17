@@ -61,6 +61,61 @@ services:
     restart: "no"
     logging: *default-logging
 
+  # Docker API choke point in front of the host daemon. Reachable from the
+  # builder over the internal network at tcp://docker-proxy:2375.
+  #
+  # Allowlist below is what Testcontainers (incl. the Ryuk reaper) needs:
+  # container CRUD, exec, image pulls, networks. SYSTEM/SWARM/SECRETS/etc.
+  # stay denied. POST=1 enables write operations.
+  #
+  # RESIDUAL RISK: the tecnativa proxy does not filter request bodies, so
+  # any client that can reach 2375 can ask the host daemon to create a
+  # container with `HostConfig.Binds: ["/:/host"]`. In this sandbox that
+  # client is the builder, and via `ssh builder docker ...` effectively
+  # the LLM agent. Ryuk needs bind mounts to mount /var/run/docker.sock
+  # into itself, so we can't disable Binds wholesale. Treat
+  # docker-proxy:2375 as a privileged surface the agent can reach.
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:0.3
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:rw
+    networks:
+      - internal
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      NETWORKS: 1
+      VOLUMES: 1
+      INFO: 1
+      VERSION: 1
+      EVENTS: 1
+      EXEC: 1
+      POST: 1
+      # Explicitly keep the Swarm / Build / Auth / Secret surface off.
+      AUTH: 0
+      BUILD: 0
+      COMMIT: 0
+      CONFIGS: 0
+      DISTRIBUTION: 0
+      NODES: 0
+      PLUGINS: 0
+      SECRETS: 0
+      SERVICES: 0
+      SESSION: 0
+      SWARM: 0
+      SYSTEM: 0
+      TASKS: 0
+    cap_drop: [ALL]
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+      - DAC_OVERRIDE
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    logging: *default-logging
+
   builder:
     build:
       context: .
@@ -72,6 +127,8 @@ services:
         condition: service_started
       keys-init:
         condition: service_completed_successfully
+      docker-proxy:
+        condition: service_started
     volumes:
       - ${AGENT_WORKDIR:-./project}:/workspace:rw
       - builder-keys:/run/builder-keys:ro
@@ -87,7 +144,12 @@ services:
     environment:
       HTTP_PROXY: http://proxy:8080
       HTTPS_PROXY: http://proxy:8080
-      NO_PROXY: localhost,127.0.0.1,proxy
+      NO_PROXY: localhost,127.0.0.1,proxy,docker-proxy
+      # Testcontainers reads DOCKER_HOST and routes through the filtered
+      # proxy instead of the host daemon directly. Ryuk is enabled by
+      # default (Testcontainers' container reaper). Image pulls happen
+      # on the host daemon and therefore bypass mitmproxy egress filtering.
+      DOCKER_HOST: tcp://docker-proxy:2375
     mem_limit: ${BUILDER_MEM_LIMIT:-6g}
     cpus: ${BUILDER_CPUS:-4}
     restart: unless-stopped
