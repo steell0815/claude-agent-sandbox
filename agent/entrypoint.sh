@@ -34,4 +34,13 @@ if [[ -d "${HOME}/.claude" ]]; then
   printf 'profile: %s (mounted)\n' "${HOME}/.claude"
 fi
 
-exec claude "$@"
+# Append the sandbox guide to the system prompt so the agent knows about
+# the builder service and other sandbox-specific affordances. Skip if the
+# caller already passed --append-system-prompt — their intent wins.
+GUIDE=/etc/claude-code/sandbox-guide.md
+APPEND_ARGS=()
+if [[ -r "$GUIDE" ]] && ! printf '%s\0' "$@" | grep -qz -- '--append-system-prompt'; then
+  APPEND_ARGS=(--append-system-prompt "$(cat "$GUIDE")")
+fi
+
+exec claude "${APPEND_ARGS[@]}" "$@"

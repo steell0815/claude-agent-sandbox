@@ -70,6 +70,10 @@ ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt \
 COPY agent/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# In-context guidance the entrypoint passes via --append-system-prompt
+# so the agent always knows how to reach the builder service.
+COPY agent/sandbox-guide.md /etc/claude-code/sandbox-guide.md
+
 USER agent
 WORKDIR /workspace
 
