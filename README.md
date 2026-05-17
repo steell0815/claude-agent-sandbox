@@ -53,9 +53,12 @@ docker compose run --rm proxy-init
 # 2. Build the agent image (now that the CA cert exists for the COPY)
 docker compose build agent
 
-# 3. Start the proxy in the background and run the agent interactively
+# 3. Start the proxy in the background and run the agent interactively.
+#    The wrapper refreshes ~/.claude/.credentials.json from the macOS
+#    Keychain on each run (no-op on Linux), then `docker compose run`s
+#    the agent. Args after the script are forwarded to `claude`.
 docker compose up -d proxy
-docker compose run --rm agent  # drops you into Claude Code
+./scripts/run-agent.sh  # drops you into Claude Code
 
 # 4. Tear down
 docker compose down
@@ -66,7 +69,9 @@ docker compose down
 > alone won't carry it into the container. `scripts/export-keychain-credentials.sh`
 > reads `Claude Code-credentials` from the Keychain, validates it parses
 > as JSON, and writes it atomically to `~/.claude/.credentials.json` with
-> `0600` perms. Re-run it whenever the host token rotates.
+> `0600` perms. `./scripts/run-agent.sh` calls it for you on every run, so
+> you only need to invoke the exporter directly when scripting around
+> `docker compose run --rm agent` yourself.
 
 The agent's working directory is `./project/` (bind-mounted at `/workspace`).
 Drop the source you want the agent to work on there — or replace the bind

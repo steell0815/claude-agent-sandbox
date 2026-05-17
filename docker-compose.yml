@@ -84,6 +84,7 @@ services:
       - /home/agent/.claude/cache:size=128m,uid=1000,gid=1000
       - /home/agent/.claude/file-history:size=32m,uid=1000,gid=1000
       - /home/agent/.claude/projects:size=64m,uid=1000,gid=1000
+      - /home/agent/.claude/session-env:size=8m,uid=1000,gid=1000
       # npm/pip/etc. caches.
       - /home/agent/.npm:size=64m,uid=1000,gid=1000
       - /home/agent/.cache:size=64m,uid=1000,gid=1000
