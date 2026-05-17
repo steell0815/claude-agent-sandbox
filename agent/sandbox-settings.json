@@ -24,6 +24,18 @@
           {
             "type": "command",
             "command": "/etc/claude-code/hooks/block-cargo-install.sh"
+          },
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/block-go-install.sh"
+          },
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/block-gem-install.sh"
+          },
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/block-pipe-to-shell.sh"
           }
         ]
       }

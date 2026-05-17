@@ -161,6 +161,16 @@ first is advisory.
    - `block-cargo-install.sh` — denies `cargo install` / `cargo
      uninstall`. Project-scoped operations (`build`, `run`, `test`,
      `check`, `fmt`, `clippy`, …) stay allowed.
+   - `block-go-install.sh` — denies `go install` / `go get`. `go build`,
+     `run`, `test`, `mod`, etc. stay allowed.
+   - `block-gem-install.sh` — denies `gem install` / `uninstall` /
+     `update` / `cleanup` / `pristine`. `gem list`, `search`, `info`,
+     `env`, `which` stay allowed; project-local `bundle install` is
+     not blocked.
+   - `block-pipe-to-shell.sh` — denies the classic
+     `curl <url> | sh` / `wget … | bash` install footgun, plus
+     process substitution (`bash <(curl …)`) and command substitution
+     (`bash -c "$(curl …)"`, `eval "$(curl …)"`) variants.
 
 To add another hook: drop a new script under `agent/sandbox-hooks/`,
 list it in `agent/sandbox-settings.json` under the appropriate
@@ -449,7 +459,7 @@ and `git-integrity.yml` (`git fsck`).
 │   ├── delegate-to-builder     # toolchain wrapper (mvn/gradle/java/... symlink to this)
 │   ├── sandbox-guide.md        # injected into the system prompt every session
 │   ├── sandbox-settings.json   # claude --settings; wires up PreToolUse hooks
-│   └── sandbox-hooks/          # PreToolUse hook scripts (block-docker-cli, block-apt-install, block-node-global-install, block-pip-install, block-cargo-install)
+│   └── sandbox-hooks/          # PreToolUse hooks (block-docker-cli, block-apt-install, block-node-global-install, block-pip-install, block-cargo-install, block-go-install, block-gem-install, block-pipe-to-shell)
 ├── builder/
 │   ├── Dockerfile              # JDK 25 + Maven + Node + Chromium + sshd
 │   ├── entrypoint.sh           # host-key gen, install authorized_keys, exec sshd
