@@ -89,11 +89,18 @@ RUN apt-get update \
  && mkdir -p /var/run/sshd
 
 # Non-root user that owns workspace + caches and accepts SSH sessions.
+# The deeper cache dirs (.m2/repository, .gradle/caches) are pre-created
+# here so that the matching named-volume mountpoints inherit builder
+# ownership when Docker creates an empty volume on first run. Without
+# this, the named volume's root would be root:root, and `cap_drop: ALL`
+# (which strips DAC_OVERRIDE) leaves even uid 0 unable to write.
 RUN groupadd --gid 1001 builder \
  && useradd --create-home --uid 1001 --gid 1001 --shell /bin/bash builder \
  && install -d -o builder -g builder -m 0700 /home/builder/.ssh \
  && install -d -o builder -g builder -m 0755 /home/builder/.m2 \
- && install -d -o builder -g builder -m 0755 /home/builder/.gradle
+ && install -d -o builder -g builder -m 0755 /home/builder/.m2/repository \
+ && install -d -o builder -g builder -m 0755 /home/builder/.gradle \
+ && install -d -o builder -g builder -m 0755 /home/builder/.gradle/caches
 
 # Maven proxy settings so artifact resolution flows through mitmproxy.
 COPY builder/maven-settings.xml /home/builder/.m2/settings.xml
