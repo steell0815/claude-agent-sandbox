@@ -151,6 +151,9 @@ first is advisory.
    - `block-docker-cli.sh` — denies `docker run`/`exec`/`pull`/etc.
    - `block-apt-install.sh` — denies `apt`/`apt-get`/`dpkg` state changes
      (read-only introspection like `apt list`, `dpkg -l` stays allowed).
+   - `block-npm-global-install.sh` — denies `npm install -g` (any flag
+     order). Local `npm install <pkg>` and read-only `npm list`/`view`
+     stay allowed.
 
 To add another hook: drop a new script under `agent/sandbox-hooks/`,
 list it in `agent/sandbox-settings.json` under the appropriate
@@ -439,7 +442,7 @@ and `git-integrity.yml` (`git fsck`).
 │   ├── delegate-to-builder     # toolchain wrapper (mvn/gradle/java/... symlink to this)
 │   ├── sandbox-guide.md        # injected into the system prompt every session
 │   ├── sandbox-settings.json   # claude --settings; wires up PreToolUse hooks
-│   └── sandbox-hooks/          # PreToolUse hook scripts (block-docker-cli, block-apt-install)
+│   └── sandbox-hooks/          # PreToolUse hook scripts (block-docker-cli, block-apt-install, block-npm-global-install)
 ├── builder/
 │   ├── Dockerfile              # JDK 25 + Maven + Node + Chromium + sshd
 │   ├── entrypoint.sh           # host-key gen, install authorized_keys, exec sshd
