@@ -54,6 +54,51 @@ Wrap commands in `bash -lc '…'` when you need shell features like `cd`,
 glob expansion, or chained `&&` — bare `ssh builder cmd args` runs a
 single binary without a login shell.
 
+## Git operations with toolchain-dependent hooks
+
+Many real projects configure `core.hooksPath=.githooks` (or similar)
+and run `mvn`, `gradle`, `pnpm test`, etc. from `pre-commit`,
+`pre-push`, or `commit-msg`. Those hooks execute inside whichever
+container runs `git commit` / `git push`. The agent has no JVM, so
+running them here fails with `mvn: command not found`.
+
+**Route hook-triggering git commands through the builder.** /workspace
+is shared, so the working tree, index, and `.git/` are identical on
+both sides.
+
+```sh
+# Commits run pre-commit, prepare-commit-msg, commit-msg.
+ssh builder git -C /workspace commit -m "..."
+
+# Pushes run pre-push.
+ssh builder git -C /workspace push
+
+# Merging with hooks involved (rebase + commit, --no-ff, etc.)
+ssh builder bash -lc 'cd /workspace && git merge --no-ff feature'
+```
+
+Commands that do **not** trigger toolchain hooks can stay on the
+agent — they're faster and don't need the round-trip:
+
+```sh
+git status                       # agent — no hooks
+git diff                         # agent
+git add ...                      # agent
+git log --oneline -20            # agent
+git -C /workspace config user.email "..."   # agent (per-repo config)
+```
+
+If a commit fails on the builder, fix the underlying issue (broken
+test, formatting, …) and try again. Do **not** reach for `--no-verify`
+unless the user explicitly asks — the whole reason the hook exists is
+to gate bad commits, and bypassing it in a sandbox makes the sandbox
+less safe than committing on the host would be.
+
+Identity: the per-repo `.git/config` lives in /workspace and is read
+by both containers, so once you've set `user.name` / `user.email` for
+the repo (the agent typically does this on first commit), the builder
+picks it up automatically — no separate setup needed.
+
 ## Network egress
 
 Both the agent and the builder reach the internet only via the
