@@ -21,11 +21,24 @@ set -euo pipefail
 
 TOOL=$(basename "$0")
 
-# printf %q produces shell-safe quoting that survives the remote bash -c
-# parse. Build the remote command piece-by-piece to keep argv intact.
+# printf %q produces shell-safe quoting that survives the remote shell's
+# command-line parse. Build the remote command piece-by-piece to keep
+# argv intact.
 REMOTE_CMD=$(printf 'cd %q && exec %q' "$PWD" "$TOOL")
 for arg in "$@"; do
   REMOTE_CMD="$REMOTE_CMD $(printf '%q' "$arg")"
 done
 
-exec ssh builder bash -c "$REMOTE_CMD"
+# Pass REMOTE_CMD as a single positional arg to ssh — *not* via an extra
+# `bash -c` here. Why: ssh concatenates the trailing argv with single
+# spaces and ships the joined string to the remote sshd, which then
+# invokes it via `<user-shell> -c <string>` itself. If we add our own
+# `bash -c "$REMOTE_CMD"` on this side, ssh's concatenation reduces it
+# to `bash -c cd /workspace && exec mvn …`, which the remote shell
+# parses as TWO commands:
+#     bash -c cd /workspace                  (child bash runs `cd` and exits)
+#  && exec mvn …                             (runs in the outer login shell at /home/builder)
+# so the cd never takes effect and mvn can't find pom.xml. Letting sshd
+# do the `bash -c` quoting (the builder user's login shell is /bin/bash)
+# keeps the chain atomic.
+exec ssh builder "$REMOTE_CMD"
