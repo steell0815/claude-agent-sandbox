@@ -8,6 +8,10 @@
           {
             "type": "command",
             "command": "/etc/claude-code/hooks/block-docker-cli.sh"
+          },
+          {
+            "type": "command",
+            "command": "/etc/claude-code/hooks/block-apt-install.sh"
           }
         ]
       }
