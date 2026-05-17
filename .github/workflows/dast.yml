@@ -52,6 +52,23 @@ jobs:
           docker compose run --rm proxy-init
           sudo chown -R "$(id -u):$(id -g)" ca
 
+      # The agent service bind-mounts $HOME/.claude read-only and then
+      # tmpfs-overlays several subpaths (sessions, todos, cache, etc.).
+      # Docker needs those subpaths to exist in the bind-mount *source*
+      # to mount tmpfs on top — they normally exist on a real dev host
+      # because Claude Code creates them, but the CI runner's HOME is
+      # empty. Pre-create them so the OCI runtime can lay the tmpfs
+      # mountpoints over them.
+      - name: Pre-create agent tmpfs target dirs
+        run: |
+          mkdir -p \
+            "$HOME/.claude/sessions" \
+            "$HOME/.claude/todos" \
+            "$HOME/.claude/cache" \
+            "$HOME/.claude/file-history" \
+            "$HOME/.claude/projects" \
+            "$HOME/.claude/session-env"
+
       - name: Start application
         run: docker compose up -d --build
         env:
