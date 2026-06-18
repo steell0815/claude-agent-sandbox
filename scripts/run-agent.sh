@@ -97,6 +97,23 @@ fi
 
 echo "workdir: $AGENT_WORKDIR -> /workspace" >&2
 
+# The agent service bind-mounts $HOME/.claude read-only and then
+# tmpfs-overlays several subpaths. Docker can only lay a tmpfs over a
+# subpath that already exists in the bind-mount *source* — it can't
+# mkdir under a :ro mount, and the read-only rootfs blocks the overlay
+# fallback. Claude Code normally creates these during use, but any one
+# that's never been touched (e.g. todos on a fresh profile) fails the
+# container with an OCI "read-only file system" mount error. Pre-create
+# them so the runtime always has a mountpoint. Keep in sync with the
+# tmpfs list in docker-compose.yml.
+mkdir -p \
+  "$HOME/.claude/sessions" \
+  "$HOME/.claude/todos" \
+  "$HOME/.claude/cache" \
+  "$HOME/.claude/file-history" \
+  "$HOME/.claude/projects" \
+  "$HOME/.claude/session-env"
+
 cd "$REPO_ROOT"
 
 # Reconcile the long-running builder's /workspace mount with the current
