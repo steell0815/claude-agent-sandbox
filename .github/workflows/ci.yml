@@ -13,7 +13,7 @@ jobs:
     name: Validate docker-compose
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: docker compose config -q
         # ANTHROPIC_API_KEY is unset in CI; the YAML uses ${VAR:-} fallbacks
@@ -24,7 +24,7 @@ jobs:
     name: Policy unit tests (pytest)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-python@v6
         with:
