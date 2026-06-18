@@ -76,12 +76,17 @@ def _build_audit_logger() -> logging.Logger:
     logger = logging.getLogger("audit")
     logger.setLevel(logging.INFO)
     logger.propagate = False
-    if logger.handlers:
-        return logger
 
     path = os.environ.get("AUDIT_LOG_PATH", "/var/log/proxy/audit.jsonl")
     max_bytes = int(os.environ.get("AUDIT_MAX_BYTES", str(50 * 1024 * 1024)))
     backups = int(os.environ.get("AUDIT_BACKUPS", "10"))
+
+    # The "audit" logger is a process-global singleton, so drop any handler
+    # left over from a previous build (module reload / changed config). Without
+    # this we'd either double-log or keep writing to a stale path.
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
+        handler.close()
 
     os.makedirs(os.path.dirname(path), exist_ok=True)
     handler = RotatingFileHandler(
